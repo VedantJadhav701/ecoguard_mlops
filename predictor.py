@@ -76,8 +76,17 @@ class ModelPredictor:
             if vision_path.exists():
                 try:
                     logger.info(f"Attempting to load YOLO from: {str(vision_path)}")
-                    self.vision_model = YOLO(str(vision_path))
-                    logger.info("✓ Vision Model loaded successfully")
+                    # Try with GPU first, but allow CPU fallback
+                    try:
+                        self.vision_model = YOLO(str(vision_path))
+                        logger.info("✓ Vision Model loaded successfully")
+                    except RuntimeError as runtime_err:
+                        if 'cuda' in str(runtime_err).lower() or 'gpu' in str(runtime_err).lower():
+                            logger.warning(f"GPU error, trying CPU mode: {str(runtime_err)}")
+                            self.vision_model = YOLO(str(vision_path), device='cpu')
+                            logger.info("✓ Vision Model loaded successfully (CPU mode)")
+                        else:
+                            raise
                 except Exception as e:
                     import traceback
                     logger.error(f"Failed to load vision model: {str(e)}")
@@ -87,8 +96,9 @@ class ModelPredictor:
                     # Try verifying file is a valid PyTorch model
                     try:
                         import torch
-                        torch.load(str(vision_path))
+                        state_dict = torch.load(str(vision_path), map_location='cpu')
                         logger.warning("WARNING: torch.load succeeded but YOLO init failed - possible YOLO issue")
+                        logger.info(f"Model dict keys: {list(state_dict.keys())[:5] if isinstance(state_dict, dict) else 'Not a dict'}")
                     except Exception as torch_e:
                         logger.error(f"torch.load also failed: {str(torch_e)}")
                     
@@ -97,8 +107,9 @@ class ModelPredictor:
                     alt_path = Path("vision_model/best.pt")
                     if alt_path.exists():
                         try:
-                            self.vision_model = YOLO(str(alt_path))
-                            logger.info("✓ Vision Model loaded successfully (alternative path)")
+                            logger.info(f"Alt path file size: {alt_path.stat().st_size} bytes")
+                            self.vision_model = YOLO(str(alt_path), device='cpu')
+                            logger.info("✓ Vision Model loaded successfully (alternative path, CPU mode)")
                         except Exception as alt_e:
                             logger.error(f"Failed with alternative path too: {str(alt_e)}")
                             logger.error(f"Alt traceback: {traceback.format_exc()}")
@@ -110,8 +121,8 @@ class ModelPredictor:
                 if alt_path.exists():
                     try:
                         logger.info(f"Alt path file size: {alt_path.stat().st_size} bytes")
-                        self.vision_model = YOLO(str(alt_path))
-                        logger.info("✓ Vision Model loaded successfully (alternative path)")
+                        self.vision_model = YOLO(str(alt_path), device='cpu')
+                        logger.info("✓ Vision Model loaded successfully (alternative path, CPU mode)")
                     except Exception as e:
                         import traceback
                         logger.error(f"Failed to load from alternative path: {str(e)}")
@@ -149,6 +160,15 @@ class ModelPredictor:
             logger.error(f"Error loading models: {str(e)}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        # Summary of loaded models
+        logger.info("="*50)
+        logger.info(f"Model Loading Summary:")
+        logger.info(f"  Vision Model: {'✓ LOADED' if self.vision_model else '✗ FAILED'}")
+        logger.info(f"  Weight Estimator: {'✓ LOADED' if self.weight_estimator else '✗ FAILED'}")
+        logger.info(f"  Weight Config: {'✓ LOADED' if self.weight_config else '✗ FAILED'}")
+        logger.info(f"  Lifestyle Model: {'✓ LOADED' if self.lifestyle_model else '✗ FAILED'}")
+        logger.info("="*50)
     
     def detect_objects(self, image_path):
         """
@@ -159,7 +179,12 @@ class ModelPredictor:
             Dictionary with detections
         """
         if self.vision_model is None:
-            raise Exception("Vision model not loaded")
+            logger.error("Vision model is None - check load_models() logs for details")
+            logger.error(f"Models path: {self.models_path}")
+            vision_path = self.models_path / 'vision_model' / 'best.pt'
+            logger.error(f"Expected model path: {vision_path}")
+            logger.error(f"File exists: {vision_path.exists() if self.models_path else 'N/A'}")
+            raise Exception("Vision model not loaded - see logs for details")
         
         try:
             # Run inference
