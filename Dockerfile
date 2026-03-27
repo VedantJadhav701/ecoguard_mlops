@@ -54,12 +54,12 @@ COPY lifestyle_model/ lifestyle_model/
 # Create directories for logging and model versioning
 RUN mkdir -p /app/logs /app/models /app/mlruns
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+# Health check (Render handles this via dashboard, but local/standalone use remains)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
-# Expose port
+# Expose port (Render ignores this but it's good practice)
 EXPOSE 8000
 
-# Run application (production mode - no reload)
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run application using the PORT environment variable provided by Render
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}"]
