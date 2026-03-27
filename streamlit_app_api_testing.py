@@ -39,12 +39,31 @@ try:
     st.sidebar.write(f"  - Weight: {'✅' if models.get('weight') else '❌'}")
     st.sidebar.write(f"  - Lifestyle: {'✅' if models.get('lifestyle') else '❌'}")
     
+    # Add diagnostics button
+    if st.sidebar.button("🔧 Show Diagnostics", key="diag_btn"):
+        try:
+            diag_response = requests.get(f"{API_BASE_URL}/api/diagnostics", timeout=5)
+            if diag_response.status_code == 200:
+                diag_data = diag_response.json()
+                st.sidebar.info("**📊 Diagnostics:**")
+                with st.sidebar.expander("Vision Model Details", expanded=models.get('vision') is False):
+                    st.json(diag_data['model_status']['vision'])
+                with st.sidebar.expander("Weight Model Details", expanded=models.get('weight') is False):
+                    st.json(diag_data['model_status']['weight'])
+                with st.sidebar.expander("Lifestyle Model Details", expanded=models.get('lifestyle') is False):
+                    st.json(diag_data['model_status']['lifestyle'])
+                with st.sidebar.expander("Environment Info"):
+                    st.json(diag_data['environment'])
+        except Exception as e:
+            st.sidebar.error(f"Diagnostics failed: {str(e)}")
+    
 except Exception as e:
     st.sidebar.error(f"❌ API Error: {str(e)}")
     st.sidebar.write(f"**URL:** {API_BASE_URL}")
     st.sidebar.write("**Troubleshooting:**")
     st.sidebar.write("- If using localhost, start API with: `uvicorn app:app`")
     st.sidebar.write("- If using Render, check deployment status")
+    st.sidebar.write("- Click 'Show Diagnostics' to see detailed model info")
 
 st.sidebar.markdown("---")
 st.sidebar.write(f"**API Base URL:** `{API_BASE_URL}`")

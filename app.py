@@ -90,6 +90,8 @@ async def root():
         "version": "1.0.0",
         "status": "running",
         "endpoints": {
+            "health": "GET /health",
+            "diagnostics": "GET /api/diagnostics (detailed model loading info)",
             "vision": "POST /api/vision/detect",
             "weight": "POST /api/weight/estimate",
             "carbon": "POST /api/carbon/calculate",
@@ -109,6 +111,66 @@ async def health_check():
             "vision": predictor.vision_model is not None,
             "weight": predictor.weight_estimator is not None,
             "lifestyle": predictor.lifestyle_model is not None
+        },
+        "timestamp": datetime.now().isoformat()
+    }
+
+# ==================== DIAGNOSTICS ====================
+
+@app.get("/api/diagnostics")
+async def diagnostics():
+    """
+    Detailed diagnostics about model loading status
+    Shows which models loaded, which failed, and why
+    """
+    predictor = get_predictor()
+    
+    # Check file existence
+    from pathlib import Path
+    vision_path = Path("vision_model/best.pt")
+    weight_path = Path("weight_model/weight_estimator.pkl")
+    config_path = Path("weight_model/weight_estimator_config.json")
+    lifestyle_path = Path("lifestyle_model/best_ml_model.joblib")
+    
+    return {
+        "status": "diagnostic",
+        "models_path": str(predictor.models_path),
+        "model_status": {
+            "vision": {
+                "loaded": predictor.vision_model is not None and predictor.vision_model != "MOCK_MODE",
+                "mock_mode": predictor.vision_model == "MOCK_MODE",
+                "type": type(predictor.vision_model).__name__ if predictor.vision_model else "None",
+                "file_exists": vision_path.exists(),
+                "file_size_mb": (vision_path.stat().st_size / (1024*1024)) if vision_path.exists() else 0
+            },
+            "weight": {
+                "loaded": predictor.weight_estimator is not None,
+                "type": type(predictor.weight_estimator).__name__ if predictor.weight_estimator else "None",
+                "file_exists": weight_path.exists(),
+                "file_size_kb": (weight_path.stat().st_size / 1024) if weight_path.exists() else 0,
+                "config_exists": config_path.exists(),
+                "config_size_kb": (config_path.stat().st_size / 1024) if config_path.exists() else 0
+            },
+            "lifestyle": {
+                "loaded": predictor.lifestyle_model is not None,
+                "type": type(predictor.lifestyle_model).__name__ if predictor.lifestyle_model else "None",
+                "file_exists": lifestyle_path.exists(),
+                "file_size_mb": (lifestyle_path.stat().st_size / (1024*1024)) if lifestyle_path.exists() else 0
+            }
+        },
+        "config": {
+            "loaded": predictor.weight_config is not None,
+            "type": type(predictor.weight_config).__name__ if predictor.weight_config else "None"
+        },
+        "summary": {
+            "vision_ok": predictor.vision_model is not None,
+            "weight_ok": predictor.weight_estimator is not None,
+            "lifestyle_ok": predictor.lifestyle_model is not None,
+            "config_ok": predictor.weight_config is not None
+        },
+        "environment": {
+            "models_path_absolute": str(Path("vision_model").absolute()),
+            "current_working_dir": str(Path(".").absolute())
         },
         "timestamp": datetime.now().isoformat()
     }
