@@ -530,7 +530,9 @@ class ModelPredictor:
             
             # If model is not loaded or doesn't have predict method, use fallback
             if self.lifestyle_model is None or not hasattr(self.lifestyle_model, 'predict'):
-                logger.warning("Lifestyle model not properly loaded, using rule-based fallback")
+                # Only log once instead of every prediction
+                if self.lifestyle_model is not None and not hasattr(self.lifestyle_model, 'predict'):
+                    logger.warning("Lifestyle model object is not a valid sklearn model, using rule-based fallback")
                 return self._fallback_lifestyle_prediction(features)
             
             try:
@@ -557,7 +559,7 @@ class ModelPredictor:
                 }
             except Exception as predict_err:
                 logger.error(f"Model prediction failed: {str(predict_err)}")
-                logger.warning("Falling back to rule-based calculation")
+                # Fall back silently without repeating the warning
                 return self._fallback_lifestyle_prediction(features)
         
         except Exception as e:

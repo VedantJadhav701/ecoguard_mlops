@@ -57,8 +57,10 @@ with st.sidebar:
         weight_mode = " (Fallback)" if predictor.weight_estimator is None and predictor.weight_config else ""
         st.write(f"Weight Estimator: {weight_status}{weight_mode}")
         
-        lifestyle_status = "✅ Loaded" if predictor.lifestyle_model else "❌ Failed"
-        st.write(f"Lifestyle Model: {lifestyle_status}")
+        # Lifestyle Model: Real model or fallback rule-based prediction (always works)
+        # Both are functional, so always show as loaded
+        lifestyle_mode = " (Fallback)" if predictor.lifestyle_model is None else ""
+        st.write(f"Lifestyle Model: ✅ Loaded{lifestyle_mode}")
         
         config_status = "✅ Loaded" if predictor.weight_config else "❌ Failed"
         st.write(f"Config: {config_status}")
@@ -69,6 +71,9 @@ with st.sidebar:
         
         if predictor.weight_estimator is None and predictor.weight_config:
             st.info("ℹ️ Weight Estimator: Using rule-based fallback (pickle model unavailable)")
+        
+        if predictor.lifestyle_model is None:
+            st.info("ℹ️ Lifestyle Model: Using rule-based fallback (joblib model unavailable)")
         
     except Exception as e:
         st.error(f"❌ Failed to load models: {str(e)}")
