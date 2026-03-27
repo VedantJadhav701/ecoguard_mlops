@@ -74,11 +74,23 @@ class ModelPredictor:
             import os
             os.environ['YOLO_DOWNLOAD'] = '0'  # Disable downloads
             os.environ['NO_UPDATES'] = '1'  # Disable auto-updates
+            os.environ['YOLO_VERBOSE'] = 'True'  # Enable verbose logging for debugging
+            
+            # Log working directory and models path
+            logger.info(f"Current working directory: {os.getcwd()}")
+            logger.info(f"Models path: {self.models_path}")
+            logger.info(f"Models path absolute: {self.models_path.absolute()}")
             
             # Check ultralytics environment and configuration
             try:
                 import ultralytics
                 logger.info(f"✓ ultralytics version: {ultralytics.__version__}")
+                
+                # Configure YOLO home and cache directories
+                yolo_home = os.path.expanduser("~/.yolo")
+                os.makedirs(yolo_home, exist_ok=True)
+                os.environ['YOLO_HOME'] = yolo_home
+                logger.info(f"Set YOLO_HOME to: {yolo_home}")
                 
                 # Try to get HUB_DIR (may not exist in all versions)
                 try:
@@ -88,13 +100,14 @@ class ModelPredictor:
                     logger.warning("HUB_DIR not available in this ultralytics version")
                 
                 # Set offline mode to prevent YOLO from trying to download
-                os.environ['YOLO_CFG_DIR'] = '/app/models'
-                logger.info("Set YOLO_CFG_DIR to /app/models")
+                os.environ['YOLO_CFG_DIR'] = yolo_home
+                logger.info("Set YOLO_CFG_DIR for local caching")
                 
                 # Check PyTorch
                 import torch
                 logger.info(f"✓ PyTorch version: {torch.__version__}")
                 logger.info(f"  CUDA Available: {torch.cuda.is_available()}")
+                logger.info(f"  Device: {'GPU/CUDA' if torch.cuda.is_available() else 'CPU'}")
                 
             except ImportError as im_err:
                 logger.error(f"Dependency missing: {str(im_err)}")
@@ -109,82 +122,79 @@ class ModelPredictor:
             if vision_path.exists():
                 try:
                     logger.info(f"Attempting to load YOLO from: {str(vision_path)}")
-                    # Try with GPU first, but allow CPU fallback
-                    try:
-                        self.vision_model = YOLO(str(vision_path))
-                        logger.info("✓ Vision Model loaded successfully")
-                    except RuntimeError as runtime_err:
-                        if 'cuda' in str(runtime_err).lower() or 'gpu' in str(runtime_err).lower():
-                            logger.warning(f"GPU error, trying CPU mode: {str(runtime_err)}")
-                            self.vision_model = YOLO(str(vision_path), device='cpu')
-                            logger.info("✓ Vision Model loaded successfully (CPU mode)")
-                        else:
+                    logger.info(f"File size: {vision_path.stat().st_size / (1024*1024):.2f} MB")
+                    
+                    # Try with explicit device and error handling
+                    yolo_loaded = False
+                    max_retries = 2
+                    
+                    for attempt in range(max_retries):
+                        try:
+                            logger.info(f"YOLO load attempt {attempt + 1}/{max_retries}")
+                            
+                            # First try: automatic device detection
+                            if attempt == 0:
+                                self.vision_model = YOLO(str(vision_path))
+                            else:
+                                # Second try: explicit CPU mode
+                                self.vision_model = YOLO(str(vision_path), device='cpu')
+                            
+                            yolo_loaded = True
+                            logger.info("✓ Vision Model loaded successfully")
+                            break
+                        
+                        except RuntimeError as runtime_err:
+                            error_msg = str(runtime_err).lower()
+                            if 'cuda' in error_msg or 'gpu' in error_msg:
+                                logger.warning(f"GPU/CUDA error: {str(runtime_err)}")
+                                if attempt == 0:
+                                    logger.info("Retrying with CPU mode...")
+                                    continue
                             raise
+                        except Exception as e:
+                            if attempt < max_retries - 1:
+                                logger.warning(f"Attempt {attempt + 1} failed: {str(e)}")
+                                logger.info("Retrying...")
+                                continue
+                            raise
+                    
+                    if not yolo_loaded:
+                        raise Exception("Failed to load YOLO after all retries")
+                
                 except Exception as e:
                     import traceback
                     logger.error(f"Failed to load vision model: {str(e)}")
                     logger.error(f"Traceback: {traceback.format_exc()}")
                     logger.error(f"File size: {vision_path.stat().st_size if vision_path.exists() else 'N/A'} bytes")
                     
-                    # Try verifying file is a valid PyTorch model
-                    try:
-                        import torch
-                        state_dict = torch.load(str(vision_path), map_location='cpu')
-                        logger.warning("WARNING: torch.load succeeded but YOLO init failed - possible YOLO issue")
-                        logger.info(f"Model dict keys: {list(state_dict.keys())[:5] if isinstance(state_dict, dict) else 'Not a dict'}")
-                    except Exception as torch_e:
-                        logger.error(f"torch.load also failed: {str(torch_e)}")
-                    
-                    logger.warning(f"Falling back to standard YOLOv8 nano model...")
-                    # Try alternative path resolution
-                    alt_path = Path("vision_model/best.pt")
-                    if alt_path.exists():
-                        try:
-                            logger.info(f"Alt path file size: {alt_path.stat().st_size} bytes")
-                            self.vision_model = YOLO(str(alt_path), device='cpu')
-                            logger.info("✓ Vision Model loaded successfully (alternative path, CPU mode)")
-                        except Exception as alt_e:
-                            logger.error(f"Failed with alternative path too: {str(alt_e)}")
-                            logger.error(f"Alt traceback: {traceback.format_exc()}")
-                            logger.warning("Switching to MOCK_MODE for testing")
-                            self.vision_model = "MOCK_MODE"
-                            logger.warning("Last fallback: Loading standard YOLOv8 nano...")
-                            try:
-                                self.vision_model = YOLO('yolov8n.pt', device='cpu')
-                                logger.warning("⚠️  Using standard YOLOv8n model as fallback (not custom trained)")
-                            except Exception as fallback_e:
-                                logger.error(f"Even standard model failed: {str(fallback_e)}")
-            else:
-                logger.error(f"Vision model not found at {vision_path}")
-                # Try alternative
-                alt_path = Path("vision_model/best.pt")
-                logger.info(f"Trying alternative path: {alt_path.absolute()}, exists: {alt_path.exists()}")
-                if alt_path.exists():
-                    try:
-                        logger.info(f"Alt path file size: {alt_path.stat().st_size} bytes")
-                        self.vision_model = YOLO(str(alt_path), device='cpu')
-                        logger.info("✓ Vision Model loaded successfully (alternative path, CPU mode)")
-                    except Exception as e:
-                        import traceback
-                        logger.error(f"Failed to load from alternative path: {str(e)}")
-                        logger.error(f"Alt traceback: {traceback.format_exc()}")
-                        logger.warning("Fallback: Loading standard YOLOv8 nano...")
-                        try:
-                            self.vision_model = YOLO('yolov8n.pt', device='cpu')
-                            logger.warning("⚠️  Using standard YOLOv8n model as fallback (not custom trained)")
-                        except Exception as fallback_e:
-                            logger.error(f"Standard model also failed: {str(fallback_e)}")
-                            logger.warning("Switching to MOCK_MODE for testing")
-                            self.vision_model = "MOCK_MODE"
-                else:
-                    logger.warning("Custom model file not found, loading standard YOLOv8...")
+                    # Try standard YOLOv8 nano as fallback
+                    logger.warning("Attempting fallback: loading standard YOLOv8 nano...")
                     try:
                         self.vision_model = YOLO('yolov8n.pt', device='cpu')
-                        logger.warning("⚠️  Using standard YOLOv8n model (not custom trained)")
-                    except Exception as e:
-                        logger.error(f"Failed to load standard model: {str(e)}")
+                        logger.warning("⚠️  Using standard YOLOv8n model as fallback (not custom trained)")
+                    except Exception as fallback_e:
+                        logger.error(f"Standard model also failed: {str(fallback_e)}")
                         logger.warning("Switching to MOCK_MODE for testing")
                         self.vision_model = "MOCK_MODE"
+            
+            else:
+                logger.error(f"Vision model not found at {vision_path}")
+                logger.info(f"Listing vision_model directory:")
+                vision_dir = self.models_path / 'vision_model'
+                if vision_dir.exists():
+                    for item in vision_dir.iterdir():
+                        logger.info(f"  - {item.name} ({item.stat().st_size / (1024*1024):.2f} MB if file)" if item.is_file() else f"  - {item.name}/ (directory)")
+                else:
+                    logger.error(f"vision_model directory not found at {vision_dir}")
+                
+                try:
+                    logger.warning("Loading standard YOLOv8 nano as fallback...")
+                    self.vision_model = YOLO('yolov8n.pt', device='cpu')
+                    logger.warning("⚠️  Using standard YOLOv8n model (not custom trained)")
+                except Exception as e:
+                    logger.error(f"Failed to load standard model: {str(e)}")
+                    logger.warning("Switching to MOCK_MODE for testing")
+                    self.vision_model = "MOCK_MODE"
             
             # Load Weight Estimator
             logger.info("Loading Weight Estimator...")
