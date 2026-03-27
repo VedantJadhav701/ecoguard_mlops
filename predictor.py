@@ -234,9 +234,27 @@ class ModelPredictor:
                         logger.warning("Weight estimator file is empty (0 bytes) - creating fallback")
                         self.weight_estimator = None  # Use fallback
                     else:
-                        with open(weight_path, 'rb') as f:
-                            self.weight_estimator = pickle.load(f)
-                        logger.info("✓ Weight Estimator loaded successfully")
+                        # Patch __main__ to find WeightEstimator if it was pickling from a notebook
+                        import sys
+                        main_module = sys.modules['__main__']
+                        has_orig = hasattr(main_module, 'WeightEstimator')
+                        orig_attr = getattr(main_module, 'WeightEstimator', None)
+                        
+                        try:
+                            # Set WeightEstimator in __main__ temporarily if needed
+                            setattr(main_module, 'WeightEstimator', WeightEstimator)
+                            
+                            with open(weight_path, 'rb') as f:
+                                self.weight_estimator = pickle.load(f)
+                            logger.info("✓ Weight Estimator loaded successfully")
+                            
+                        finally:
+                            # Clean up __main__ patch
+                            if has_orig:
+                                setattr(main_module, 'WeightEstimator', orig_attr)
+                            else:
+                                if hasattr(main_module, 'WeightEstimator'):
+                                    delattr(main_module, 'WeightEstimator')
                 except (pickle.UnpicklingError, AttributeError, EOFError) as pickle_err:
                     logger.error(f"Failed to unpickle weight estimator: {str(pickle_err)}")
                     logger.warning(f"Error type: {type(pickle_err).__name__}")
