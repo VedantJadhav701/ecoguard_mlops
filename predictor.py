@@ -49,6 +49,22 @@ class ModelPredictor:
         # Load all models
         self.load_models()
     
+    def _get_default_weight_config(self):
+        """Provide default weight configuration if file is missing or corrupted"""
+        return {
+            'base_weights': {
+                'plastic': 25,
+                'glass': 35,
+                'metal': 50,
+                'paper': 10,
+                'cardboard': 15,
+                'trash': 20
+            },
+            'reference_area_ratio': 0.1,  # 10% of image
+            'min_weight_g': 5,
+            'max_weight_g': 500
+        }
+    
     def load_models(self):
         """Load all pre-trained models"""
         self.load_errors = []  # Track load errors
@@ -63,8 +79,13 @@ class ModelPredictor:
             try:
                 import ultralytics
                 logger.info(f"✓ ultralytics version: {ultralytics.__version__}")
-                from ultralytics.utils.downloads import HUB_DIR
-                logger.info(f"YOLO cache/hub dir: {HUB_DIR}")
+                
+                # Try to get HUB_DIR (may not exist in all versions)
+                try:
+                    from ultralytics.utils.downloads import HUB_DIR
+                    logger.info(f"YOLO cache/hub dir: {HUB_DIR}")
+                except (ImportError, AttributeError):
+                    logger.warning("HUB_DIR not available in this ultralytics version")
                 
                 # Set offline mode to prevent YOLO from trying to download
                 os.environ['YOLO_CFG_DIR'] = '/app/models'
@@ -169,29 +190,60 @@ class ModelPredictor:
             logger.info("Loading Weight Estimator...")
             weight_path = self.models_path / 'weight_model' / 'weight_estimator.pkl'
             if weight_path.exists():
-                with open(weight_path, 'rb') as f:
-                    self.weight_estimator = pickle.load(f)
-                logger.info("✓ Weight Estimator loaded successfully")
+                try:
+                    file_size = weight_path.stat().st_size
+                    logger.info(f"Weight estimator file size: {file_size} bytes")
+                    
+                    if file_size == 0:
+                        logger.warning("Weight estimator file is empty (0 bytes) - creating fallback")
+                        self.weight_estimator = None  # Use fallback
+                    else:
+                        with open(weight_path, 'rb') as f:
+                            self.weight_estimator = pickle.load(f)
+                        logger.info("✓ Weight Estimator loaded successfully")
+                except Exception as pickle_err:
+                    logger.error(f"Failed to load weight estimator: {str(pickle_err)}")
+                    logger.warning("Will use fallback weight estimation formula")
+                    self.weight_estimator = None
             else:
                 logger.error(f"Weight estimator not found at {weight_path}")
             
             # Load Weight Config
+            logger.info("Loading Weight Config...")
             config_path = self.models_path / 'weight_model' / 'weight_estimator_config.json'
             if config_path.exists():
-                with open(config_path, 'r') as f:
-                    self.weight_config = json.load(f)
-                logger.info("✓ Weight Config loaded successfully")
+                try:
+                    with open(config_path, 'r') as f:
+                        self.weight_config = json.load(f)
+                    logger.info("✓ Weight Config loaded successfully")
+                except Exception as json_err:
+                    logger.error(f"Failed to load weight config JSON: {str(json_err)}")
+                    logger.warning("Using default weight config")
+                    self.weight_config = self._get_default_weight_config()
+            else:
+                logger.error(f"Weight config not found at {config_path}")
+                logger.warning("Using default weight config")
+                self.weight_config = self._get_default_weight_config()
             
             # Load Lifestyle Model
             logger.info("Loading Lifestyle Model...")
             lifestyle_path = self.models_path / 'lifestyle_model' / 'best_ml_model.joblib'
             if lifestyle_path.exists():
-                self.lifestyle_model = joblib.load(str(lifestyle_path))
-                logger.info("✓ Lifestyle Model loaded successfully")
+                try:
+                    file_size = lifestyle_path.stat().st_size
+                    logger.info(f"Lifestyle model file size: {file_size} bytes")
+                    
+                    self.lifestyle_model = joblib.load(str(lifestyle_path))
+                    logger.info("✓ Lifestyle Model loaded successfully")
+                except Exception as joblib_err:
+                    logger.error(f"Failed to load lifestyle model: {str(joblib_err)}")
+                    import traceback
+                    logger.error(f"Traceback: {traceback.format_exc()}")
+                    self.lifestyle_model = None
             else:
                 logger.error(f"Lifestyle model not found at {lifestyle_path}")
             
-            logger.info("✓ All models loaded successfully")
+            logger.info("✓ All available models loaded")
             
         except Exception as e:
             logger.error(f"Error loading models: {str(e)}")
@@ -399,6 +451,57 @@ class ModelPredictor:
                 'error': str(e)
             }
     
+    def _fallback_lifestyle_prediction(self, features):
+        """
+        Rule-based fallback calculation when ML model is not available
+        Features (20 values):
+        [0] electricity, [1] gas, [2] water, [3] car, [4] transit, [5] flights,
+        [6-8] food, [9] recycling, [10-11] plastic/clothes, [12-19] scaled/duplicates
+        """
+        try:
+            # Extract key features
+            electricity = max(0, features[0] * 10)           # kWh/day -> scale back
+            gas = max(0, features[1] * 50)                   # m³/month -> scale back
+            car_miles = max(0, features[3] * 100)            # scaled -> scale back
+            flights = max(0, features[5])                    # flights/year
+            meat_ratio = max(0, features[6])                 # meat meal ratio
+            recycling = max(0, features[9])                  # recycling rate (0-1)
+            
+            # Rough carbon estimates (kg CO₂)
+            electricity_carbon = electricity * 30 * 0.4           # 0.4 kg CO₂/kWh * 30 days
+            gas_carbon = gas * 2.5                                # 2.5 kg CO₂/m³
+            car_carbon = car_miles * 0.21                         # 0.21 kg CO₂/mile * 30 days
+            flight_carbon = flights * 200 / 12                    # 200 kg per flight, annual
+            food_carbon = (1 + meat_ratio) * 100                  # base + meat consumption
+            
+            # Calculate total with recycling benefit
+            total_carbon = electricity_carbon + gas_carbon + car_carbon + flight_carbon + food_carbon
+            recycling_reduction = total_carbon * recycling * 0.15  # 15% reduction per recycling %
+            monthly_carbon = max(100, total_carbon - recycling_reduction)
+            
+            yearly_carbon = monthly_carbon * 12
+            daily_average = monthly_carbon / 30
+            
+            average_carbon = 500
+            compared_percent = round((monthly_carbon - average_carbon) / average_carbon * 100, 1)
+            
+            return {
+                'success': True,
+                'monthly_carbon_kg': round(monthly_carbon, 1),
+                'yearly_carbon_kg': round(yearly_carbon, 1),
+                'daily_average_kg': round(daily_average, 2),
+                'compared_to_average_percent': compared_percent,
+                'country_average_kg': average_carbon,
+                'recommendation': self._get_recommendation(compared_percent),
+                'warning': '⚠️ Using rule-based estimate (ML model not available)'
+            }
+        except Exception as e:
+            logger.error(f"Fallback lifestyle prediction failed: {str(e)}")
+            return {
+                'success': False,
+                'error': f"Fallback calculation failed: {str(e)}"
+            }
+    
     def predict_lifestyle_carbon(self, features):
         """
         Predict user's carbon footprint from lifestyle features
@@ -408,16 +511,18 @@ class ModelPredictor:
             Dictionary with carbon prediction
         """
         try:
-            if self.lifestyle_model is None:
-                raise Exception("Lifestyle model not loaded")
-            
             if len(features) != 20:
                 raise ValueError(f"Expected 20 features, got {len(features)}")
+            
+            # If model is not loaded, use fallback calculation
+            if self.lifestyle_model is None:
+                logger.warning("Lifestyle model not loaded, using rule-based fallback")
+                return self._fallback_lifestyle_prediction(features)
             
             # Convert to numpy array
             features_array = np.array(features).reshape(1, -1)
             
-            # Predict
+            # Predict using loaded model
             monthly_carbon = float(self.lifestyle_model.predict(features_array)[0])
             yearly_carbon = monthly_carbon * 12
             daily_average = monthly_carbon / 30
