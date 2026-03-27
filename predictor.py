@@ -102,7 +102,7 @@ class ModelPredictor:
                     except Exception as torch_e:
                         logger.error(f"torch.load also failed: {str(torch_e)}")
                     
-                    logger.error(f"Attempting with relative path...")
+                    logger.warning(f"Falling back to standard YOLOv8 nano model...")
                     # Try alternative path resolution
                     alt_path = Path("vision_model/best.pt")
                     if alt_path.exists():
@@ -113,6 +113,12 @@ class ModelPredictor:
                         except Exception as alt_e:
                             logger.error(f"Failed with alternative path too: {str(alt_e)}")
                             logger.error(f"Alt traceback: {traceback.format_exc()}")
+                            logger.warning("Last fallback: Loading standard YOLOv8 nano...")
+                            try:
+                                self.vision_model = YOLO('yolov8n.pt', device='cpu')
+                                logger.warning("⚠️  Using standard YOLOv8n model as fallback (not custom trained)")
+                            except Exception as fallback_e:
+                                logger.error(f"Even standard model failed: {str(fallback_e)}")
             else:
                 logger.error(f"Vision model not found at {vision_path}")
                 # Try alternative
@@ -127,6 +133,19 @@ class ModelPredictor:
                         import traceback
                         logger.error(f"Failed to load from alternative path: {str(e)}")
                         logger.error(f"Alt traceback: {traceback.format_exc()}")
+                        logger.warning("Fallback: Loading standard YOLOv8 nano...")
+                        try:
+                            self.vision_model = YOLO('yolov8n.pt', device='cpu')
+                            logger.warning("⚠️  Using standard YOLOv8n model as fallback (not custom trained)")
+                        except Exception as fallback_e:
+                            logger.error(f"Standard model also failed: {str(fallback_e)}")
+                else:
+                    logger.warning("Custom model file not found, loading standard YOLOv8...")
+                    try:
+                        self.vision_model = YOLO('yolov8n.pt', device='cpu')
+                        logger.warning("⚠️  Using standard YOLOv8n model (not custom trained)")
+                    except Exception as e:
+                        logger.error(f"Failed to load standard model: {str(e)}")
             
             # Load Weight Estimator
             logger.info("Loading Weight Estimator...")
