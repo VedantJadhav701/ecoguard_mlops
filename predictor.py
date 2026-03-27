@@ -55,11 +55,32 @@ class ModelPredictor:
             # Load Vision Model (YOLOv8)
             logger.info("Loading Vision Model (YOLOv8)...")
             vision_path = self.models_path / 'vision_model' / 'best.pt'
+            logger.info(f"Vision model path: {vision_path.absolute()}")
+            logger.info(f"Vision model exists: {vision_path.exists()}")
+            
             if vision_path.exists():
-                self.vision_model = YOLO(str(vision_path))
-                logger.info("✓ Vision Model loaded successfully")
+                try:
+                    self.vision_model = YOLO(str(vision_path))
+                    logger.info("✓ Vision Model loaded successfully")
+                except Exception as e:
+                    logger.error(f"Failed to load vision model: {str(e)}")
+                    logger.error(f"Attempting with relative path...")
+                    # Try alternative path resolution
+                    alt_path = Path("vision_model/best.pt")
+                    if alt_path.exists():
+                        self.vision_model = YOLO(str(alt_path))
+                        logger.info("✓ Vision Model loaded successfully (alternative path)")
             else:
                 logger.error(f"Vision model not found at {vision_path}")
+                # Try alternative
+                alt_path = Path("vision_model/best.pt")
+                logger.info(f"Trying alternative path: {alt_path.absolute()}, exists: {alt_path.exists()}")
+                if alt_path.exists():
+                    try:
+                        self.vision_model = YOLO(str(alt_path))
+                        logger.info("✓ Vision Model loaded successfully (alternative path)")
+                    except Exception as e:
+                        logger.error(f"Failed to load from alternative path: {str(e)}")
             
             # Load Weight Estimator
             logger.info("Loading Weight Estimator...")
@@ -91,11 +112,8 @@ class ModelPredictor:
             
         except Exception as e:
             logger.error(f"Error loading models: {str(e)}")
-            raise
-    
-    def detect_objects(self, image_path):
-        """
-        Detect objects in image using YOLOv8
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
         Args:
             image_path: Path to image file
         Returns:
