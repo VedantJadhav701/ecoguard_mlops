@@ -1,0 +1,14 @@
+{
+  "base_weights": {
+    "plastic": 25,
+    "glass": 250,
+    "metal": 50,
+    "paper": 15,
+    "cardboard": 40,
+    "trash": 30
+  },
+  "reference_area_ratio": 0.3,
+  "min_weight_g": 2,
+  "max_weight_g": 500,
+  "description": "Rule-based weight estimator: weight = base_weight * (area_ratio / reference_ratio)"
+}

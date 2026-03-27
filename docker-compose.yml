@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # Main FastAPI application
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ecoguard-api
+    ports:
+      - "8000:8000"
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - LOG_LEVEL=INFO
+      - ENVIRONMENT=development
+    volumes:
+      - ./logs:/app/logs
+      - ./models:/app/models
+    depends_on:
+      - mlflow
+      - prometheus
+    networks:
+      - ecoguard-network
+    restart: unless-stopped
+
+  # MLflow Model Registry & Tracking
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.10.0
+    container_name: ecoguard-mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow-data:/mlflow
+    command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri sqlite:////mlflow/mlflow.db --default-artifact-root /mlflow/artifacts
+    networks:
+      - ecoguard-network
+    restart: unless-stopped
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: ecoguard-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - ecoguard-network
+    restart: unless-stopped
+
+  # Grafana for dashboards
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: ecoguard-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    networks:
+      - ecoguard-network
+    restart: unless-stopped
+
+  # PostgreSQL for production database (optional)
+  postgres:
+    image: postgres:15-alpine
+    container_name: ecoguard-postgres
+    environment:
+      POSTGRES_DB: ecoguard
+      POSTGRES_USER: ecoguard
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ecoguard_dev}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - ecoguard-network
+    restart: unless-stopped
+
+volumes:
+  mlflow-data:
+  prometheus-data:
+  grafana-data:
+  postgres-data:
+
+networks:
+  ecoguard-network:
+    driver: bridge

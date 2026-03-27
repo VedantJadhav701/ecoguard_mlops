@@ -1,0 +1,56 @@
+services:
+  - type: web
+    name: ecoguard-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    
+    env:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: MLFLOW_TRACKING_URI
+        value: ${{ secrets.MLFLOW_TRACKING_URI }}
+    
+    # Health check
+    healthCheckPath: /health
+    healthCheckInterval: 30
+    
+    # Auto-deploy on push
+    autoDeploy: true
+    
+    # Environment variables (set via Render dashboard)
+    envVars:
+      - ENVIRONMENT
+      - LOG_LEVEL
+      - SECRET_KEY
+      - CORS_ORIGINS
+      - MLFLOW_TRACKING_URI
+      - DATABASE_URL
+    
+    # Redirects
+    routes:
+      - path: /
+        destination: /
+      - path: /api/*
+        destination: /api/*
+      - path: /metrics
+        destination: /metrics
+      - path: /health
+        destination: /health
+      - path: /docs
+        destination: /docs
+
+  # Optional: PostgreSQL database
+  - type: pserv
+    name: ecoguard-postgres
+    runtime: postgres
+    plan: starter
+    ipAllowList: []
+    envVars:
+      - POSTGRES_DB: ecoguard
+      - POSTGRES_USER: ecoguard
+      - POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
