@@ -18,11 +18,11 @@ class ModelPredictor:
     Central predictor class that loads and manages all models
     """
     
-    def __init__(self, models_path="models"):
+    def __init__(self, models_path="."):
         """
         Initialize and load all models
         Args:
-            models_path: Path to models directory
+            models_path: Path to models directory (default: current directory)
         """
         self.models_path = Path(models_path)
         self.vision_model = None
@@ -316,7 +316,7 @@ class ModelPredictor:
 # Global predictor instance
 _predictor = None
 
-def get_predictor(models_path="models"):
+def get_predictor(models_path="."):
     """Get or create global predictor instance"""
     global _predictor
     if _predictor is None:
