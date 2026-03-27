@@ -52,6 +52,13 @@ class ModelPredictor:
     def load_models(self):
         """Load all pre-trained models"""
         try:
+            # Check if ultralytics is available
+            try:
+                import ultralytics
+                logger.info(f"✓ ultralytics version: {ultralytics.__version__}")
+            except ImportError as im_err:
+                logger.error(f"ultralytics not available: {str(im_err)}")
+            
             # Load Vision Model (YOLOv8)
             logger.info("Loading Vision Model (YOLOv8)...")
             vision_path = self.models_path / 'vision_model' / 'best.pt'
@@ -63,13 +70,19 @@ class ModelPredictor:
                     self.vision_model = YOLO(str(vision_path))
                     logger.info("✓ Vision Model loaded successfully")
                 except Exception as e:
+                    import traceback
                     logger.error(f"Failed to load vision model: {str(e)}")
+                    logger.error(f"Traceback: {traceback.format_exc()}")
                     logger.error(f"Attempting with relative path...")
                     # Try alternative path resolution
                     alt_path = Path("vision_model/best.pt")
                     if alt_path.exists():
-                        self.vision_model = YOLO(str(alt_path))
-                        logger.info("✓ Vision Model loaded successfully (alternative path)")
+                        try:
+                            self.vision_model = YOLO(str(alt_path))
+                            logger.info("✓ Vision Model loaded successfully (alternative path)")
+                        except Exception as alt_e:
+                            logger.error(f"Failed with alternative path too: {str(alt_e)}")
+                            logger.error(f"Alt traceback: {traceback.format_exc()}")
             else:
                 logger.error(f"Vision model not found at {vision_path}")
                 # Try alternative
@@ -80,7 +93,9 @@ class ModelPredictor:
                         self.vision_model = YOLO(str(alt_path))
                         logger.info("✓ Vision Model loaded successfully (alternative path)")
                     except Exception as e:
+                        import traceback
                         logger.error(f"Failed to load from alternative path: {str(e)}")
+                        logger.error(f"Alt traceback: {traceback.format_exc()}")
             
             # Load Weight Estimator
             logger.info("Loading Weight Estimator...")
