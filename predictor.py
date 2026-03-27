@@ -114,6 +114,10 @@ class ModelPredictor:
             logger.error(f"Error loading models: {str(e)}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
+    
+    def detect_objects(self, image_path):
+        """
+        Detect waste objects in image using YOLOv8
         Args:
             image_path: Path to image file
         Returns:
