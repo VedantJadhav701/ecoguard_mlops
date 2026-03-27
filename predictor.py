@@ -52,10 +52,18 @@ class ModelPredictor:
     def load_models(self):
         """Load all pre-trained models"""
         try:
-            # Check if ultralytics is available
+            # Check ultralytics environment and configuration
             try:
                 import ultralytics
                 logger.info(f"✓ ultralytics version: {ultralytics.__version__}")
+                from ultralytics.utils.downloads import HUB_DIR
+                logger.info(f"YOLO cache/hub dir: {HUB_DIR}")
+                
+                # Set offline mode to prevent YOLO from trying to download
+                import os
+                os.environ['YOLO_CFG_DIR'] = '/app/models'
+                logger.info("Set YOLO_CFG_DIR to /app/models")
+                
             except ImportError as im_err:
                 logger.error(f"ultralytics not available: {str(im_err)}")
             
@@ -67,12 +75,23 @@ class ModelPredictor:
             
             if vision_path.exists():
                 try:
+                    logger.info(f"Attempting to load YOLO from: {str(vision_path)}")
                     self.vision_model = YOLO(str(vision_path))
                     logger.info("✓ Vision Model loaded successfully")
                 except Exception as e:
                     import traceback
                     logger.error(f"Failed to load vision model: {str(e)}")
                     logger.error(f"Traceback: {traceback.format_exc()}")
+                    logger.error(f"File size: {vision_path.stat().st_size if vision_path.exists() else 'N/A'} bytes")
+                    
+                    # Try verifying file is a valid PyTorch model
+                    try:
+                        import torch
+                        torch.load(str(vision_path))
+                        logger.warning("WARNING: torch.load succeeded but YOLO init failed - possible YOLO issue")
+                    except Exception as torch_e:
+                        logger.error(f"torch.load also failed: {str(torch_e)}")
+                    
                     logger.error(f"Attempting with relative path...")
                     # Try alternative path resolution
                     alt_path = Path("vision_model/best.pt")
@@ -90,6 +109,7 @@ class ModelPredictor:
                 logger.info(f"Trying alternative path: {alt_path.absolute()}, exists: {alt_path.exists()}")
                 if alt_path.exists():
                     try:
+                        logger.info(f"Alt path file size: {alt_path.stat().st_size} bytes")
                         self.vision_model = YOLO(str(alt_path))
                         logger.info("✓ Vision Model loaded successfully (alternative path)")
                     except Exception as e:
