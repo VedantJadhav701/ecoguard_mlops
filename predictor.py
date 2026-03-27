@@ -51,7 +51,14 @@ class ModelPredictor:
     
     def load_models(self):
         """Load all pre-trained models"""
+        self.load_errors = []  # Track load errors
+        
         try:
+            # Disable YOLO download and network access
+            import os
+            os.environ['YOLO_DOWNLOAD'] = '0'  # Disable downloads
+            os.environ['NO_UPDATES'] = '1'  # Disable auto-updates
+            
             # Check ultralytics environment and configuration
             try:
                 import ultralytics
@@ -60,12 +67,17 @@ class ModelPredictor:
                 logger.info(f"YOLO cache/hub dir: {HUB_DIR}")
                 
                 # Set offline mode to prevent YOLO from trying to download
-                import os
                 os.environ['YOLO_CFG_DIR'] = '/app/models'
                 logger.info("Set YOLO_CFG_DIR to /app/models")
                 
+                # Check PyTorch
+                import torch
+                logger.info(f"✓ PyTorch version: {torch.__version__}")
+                logger.info(f"  CUDA Available: {torch.cuda.is_available()}")
+                
             except ImportError as im_err:
-                logger.error(f"ultralytics not available: {str(im_err)}")
+                logger.error(f"Dependency missing: {str(im_err)}")
+                self.load_errors.append(str(im_err))
             
             # Load Vision Model (YOLOv8)
             logger.info("Loading Vision Model (YOLOv8)...")
@@ -113,6 +125,8 @@ class ModelPredictor:
                         except Exception as alt_e:
                             logger.error(f"Failed with alternative path too: {str(alt_e)}")
                             logger.error(f"Alt traceback: {traceback.format_exc()}")
+                            logger.warning("Switching to MOCK_MODE for testing")
+                            self.vision_model = "MOCK_MODE"
                             logger.warning("Last fallback: Loading standard YOLOv8 nano...")
                             try:
                                 self.vision_model = YOLO('yolov8n.pt', device='cpu')
@@ -139,6 +153,8 @@ class ModelPredictor:
                             logger.warning("⚠️  Using standard YOLOv8n model as fallback (not custom trained)")
                         except Exception as fallback_e:
                             logger.error(f"Standard model also failed: {str(fallback_e)}")
+                            logger.warning("Switching to MOCK_MODE for testing")
+                            self.vision_model = "MOCK_MODE"
                 else:
                     logger.warning("Custom model file not found, loading standard YOLOv8...")
                     try:
@@ -146,6 +162,8 @@ class ModelPredictor:
                         logger.warning("⚠️  Using standard YOLOv8n model (not custom trained)")
                     except Exception as e:
                         logger.error(f"Failed to load standard model: {str(e)}")
+                        logger.warning("Switching to MOCK_MODE for testing")
+                        self.vision_model = "MOCK_MODE"
             
             # Load Weight Estimator
             logger.info("Loading Weight Estimator...")
@@ -204,6 +222,31 @@ class ModelPredictor:
             logger.error(f"Expected model path: {vision_path}")
             logger.error(f"File exists: {vision_path.exists() if self.models_path else 'N/A'}")
             raise Exception("Vision model not loaded - see logs for details")
+        
+        # Handle mock mode (for testing when YOLO fails to load)
+        if self.vision_model == "MOCK_MODE":
+            logger.warning("🎭 MOCK_MODE: Returning sample detections for testing")
+            return {
+                'success': True,
+                'detections': [
+                    {
+                        'class_id': 4,
+                        'class_name': 'plastic',
+                        'confidence': 0.92,
+                        'bbox': {'x1': 10, 'y1': 20, 'x2': 50, 'y2': 60}
+                    },
+                    {
+                        'class_id': 2,
+                        'class_name': 'metal',
+                        'confidence': 0.85,
+                        'bbox': {'x1': 60, 'y1': 30, 'x2': 95, 'y2': 70}
+                    }
+                ],
+                'count': 2,
+                'model': '⚠️  YOLOv8 (MOCK_MODE - actual model failed to load)',
+                'accuracy': 'N/A - Mock Data',
+                'warning': 'Running in MOCK_MODE because YOLOv8 failed to initialize. Real model loading needs debugging.'
+            }
         
         try:
             # Run inference
