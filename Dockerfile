@@ -7,7 +7,7 @@ WORKDIR /build
 RUN apt-get update && apt-get install -y \
     build-essential \
     git \
-    libgl1-mesa-glvnd \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
@@ -25,7 +25,7 @@ WORKDIR /app
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glvnd \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
