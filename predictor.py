@@ -294,6 +294,16 @@ class ModelPredictor:
                     
                     loaded_model = joblib.load(str(lifestyle_path))
                     
+                    # If loaded object is a dictionary, try to extract the model
+                    if isinstance(loaded_model, dict):
+                        logger.info(f"Loaded lifestyle model is a dictionary with keys: {list(loaded_model.keys())}")
+                        # Look for common keys that might contain the actual model
+                        for key in ['model', 'best_model', 'regressor', 'classifier', 'pipeline', 'clf']:
+                            if key in loaded_model:
+                                logger.info(f"Found model in dictionary using key: '{key}'")
+                                loaded_model = loaded_model[key]
+                                break
+                    
                     # Validate that what we loaded is actually a model (has predict method)
                     if not hasattr(loaded_model, 'predict'):
                         logger.error(f"Loaded object is not a valid model. Type: {type(loaded_model)}")
@@ -301,7 +311,7 @@ class ModelPredictor:
                         self.lifestyle_model = None
                     else:
                         self.lifestyle_model = loaded_model
-                        logger.info("✓ Lifestyle Model loaded successfully and validated")
+                        logger.info(f"✓ Lifestyle Model loaded successfully and validated (Type: {type(loaded_model).__name__})")
                 except Exception as joblib_err:
                     logger.error(f"Failed to load lifestyle model: {str(joblib_err)}")
                     import traceback
