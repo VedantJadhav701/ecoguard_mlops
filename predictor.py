@@ -136,8 +136,8 @@ class ModelPredictor:
                             if attempt == 0:
                                 self.vision_model = YOLO(str(vision_path))
                             else:
-                                # Second try: explicit CPU mode
-                                self.vision_model = YOLO(str(vision_path), device='cpu')
+                                # Second try: explicit mode (removed unsupported device arg)
+                                self.vision_model = YOLO(str(vision_path))
                             
                             yolo_loaded = True
                             logger.info("✓ Vision Model loaded successfully")
@@ -170,7 +170,7 @@ class ModelPredictor:
                     # Try standard YOLOv8 nano as fallback
                     logger.warning("Attempting fallback: loading standard YOLOv8 nano...")
                     try:
-                        self.vision_model = YOLO('yolov8n.pt', device='cpu')
+                        self.vision_model = YOLO('yolov8n.pt')
                         logger.warning("⚠️  Using standard YOLOv8n model as fallback (not custom trained)")
                     except Exception as fallback_e:
                         logger.error(f"Standard model also failed: {str(fallback_e)}")
@@ -189,7 +189,7 @@ class ModelPredictor:
                 
                 try:
                     logger.warning("Loading standard YOLOv8 nano as fallback...")
-                    self.vision_model = YOLO('yolov8n.pt', device='cpu')
+                    self.vision_model = YOLO('yolov8n.pt')
                     logger.warning("⚠️  Using standard YOLOv8n model (not custom trained)")
                 except Exception as e:
                     logger.error(f"Failed to load standard model: {str(e)}")

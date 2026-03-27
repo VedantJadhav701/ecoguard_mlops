@@ -45,14 +45,15 @@ logs/
 *.log
 *.logs
 
-# Models and data
-models/
-data/
-*.pt
-*.pth
-*.joblib
-*.pkl
-*.pickle
+# Models and data (Un-ignored for Render deployment)
+# models/
+# data/
+# *.pt
+# *.pth
+# *.joblib
+# *.pkl
+# *.pickle
+
 
 # MLflow and tracking
 mlruns/
