@@ -52,8 +52,10 @@ with st.sidebar:
         vision_status = "✅ Loaded" if predictor.vision_model else "❌ Failed"
         st.write(f"Vision Model: {vision_status}")
         
-        weight_status = "✅ Loaded" if predictor.weight_estimator else "❌ Failed"
-        st.write(f"Weight Estimator: {weight_status}")
+        # Weight Estimator: Check if either pickle OR fallback config is available
+        weight_status = "✅ Loaded" if (predictor.weight_estimator or predictor.weight_config) else "❌ Failed"
+        weight_mode = " (Fallback)" if predictor.weight_estimator is None and predictor.weight_config else ""
+        st.write(f"Weight Estimator: {weight_status}{weight_mode}")
         
         lifestyle_status = "✅ Loaded" if predictor.lifestyle_model else "❌ Failed"
         st.write(f"Lifestyle Model: {lifestyle_status}")
@@ -61,9 +63,12 @@ with st.sidebar:
         config_status = "✅ Loaded" if predictor.weight_config else "❌ Failed"
         st.write(f"Config: {config_status}")
         
-        # Check if using mock mode
+        # Show warnings if using fallbacks
         if predictor.vision_model == "MOCK_MODE":
             st.warning("⚠️ Vision using MOCK_MODE (real model failed)")
+        
+        if predictor.weight_estimator is None and predictor.weight_config:
+            st.info("ℹ️ Weight Estimator: Using rule-based fallback (pickle model unavailable)")
         
     except Exception as e:
         st.error(f"❌ Failed to load models: {str(e)}")

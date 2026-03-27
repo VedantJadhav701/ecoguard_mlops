@@ -201,6 +201,11 @@ class ModelPredictor:
                         with open(weight_path, 'rb') as f:
                             self.weight_estimator = pickle.load(f)
                         logger.info("✓ Weight Estimator loaded successfully")
+                except (pickle.UnpicklingError, AttributeError, EOFError) as pickle_err:
+                    logger.error(f"Failed to unpickle weight estimator: {str(pickle_err)}")
+                    logger.warning(f"Error type: {type(pickle_err).__name__}")
+                    logger.warning("Will use fallback weight estimation formula")
+                    self.weight_estimator = None
                 except Exception as pickle_err:
                     logger.error(f"Failed to load weight estimator: {str(pickle_err)}")
                     logger.warning("Will use fallback weight estimation formula")
