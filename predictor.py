@@ -238,8 +238,16 @@ class ModelPredictor:
                     file_size = lifestyle_path.stat().st_size
                     logger.info(f"Lifestyle model file size: {file_size} bytes")
                     
-                    self.lifestyle_model = joblib.load(str(lifestyle_path))
-                    logger.info("✓ Lifestyle Model loaded successfully")
+                    loaded_model = joblib.load(str(lifestyle_path))
+                    
+                    # Validate that what we loaded is actually a model (has predict method)
+                    if not hasattr(loaded_model, 'predict'):
+                        logger.error(f"Loaded object is not a valid model. Type: {type(loaded_model)}")
+                        logger.warning("Object doesn't have predict() method - will use fallback")
+                        self.lifestyle_model = None
+                    else:
+                        self.lifestyle_model = loaded_model
+                        logger.info("✓ Lifestyle Model loaded successfully and validated")
                 except Exception as joblib_err:
                     logger.error(f"Failed to load lifestyle model: {str(joblib_err)}")
                     import traceback
@@ -247,6 +255,7 @@ class ModelPredictor:
                     self.lifestyle_model = None
             else:
                 logger.error(f"Lifestyle model not found at {lifestyle_path}")
+                self.lifestyle_model = None
             
             logger.info("✓ All available models loaded")
             
@@ -519,32 +528,37 @@ class ModelPredictor:
             if len(features) != 20:
                 raise ValueError(f"Expected 20 features, got {len(features)}")
             
-            # If model is not loaded, use fallback calculation
-            if self.lifestyle_model is None:
-                logger.warning("Lifestyle model not loaded, using rule-based fallback")
+            # If model is not loaded or doesn't have predict method, use fallback
+            if self.lifestyle_model is None or not hasattr(self.lifestyle_model, 'predict'):
+                logger.warning("Lifestyle model not properly loaded, using rule-based fallback")
                 return self._fallback_lifestyle_prediction(features)
             
-            # Convert to numpy array
-            features_array = np.array(features).reshape(1, -1)
-            
-            # Predict using loaded model
-            monthly_carbon = float(self.lifestyle_model.predict(features_array)[0])
-            yearly_carbon = monthly_carbon * 12
-            daily_average = monthly_carbon / 30
-            
-            # Compare to average (assuming average is ~500 kg/month)
-            average_carbon = 500
-            compared_percent = round((monthly_carbon - average_carbon) / average_carbon * 100, 1)
-            
-            return {
-                'success': True,
-                'monthly_carbon_kg': round(monthly_carbon, 1),
-                'yearly_carbon_kg': round(yearly_carbon, 1),
-                'daily_average_kg': round(daily_average, 2),
-                'compared_to_average_percent': compared_percent,
-                'country_average_kg': average_carbon,
-                'recommendation': self._get_recommendation(compared_percent)
-            }
+            try:
+                # Convert to numpy array
+                features_array = np.array(features).reshape(1, -1)
+                
+                # Predict using loaded model
+                monthly_carbon = float(self.lifestyle_model.predict(features_array)[0])
+                yearly_carbon = monthly_carbon * 12
+                daily_average = monthly_carbon / 30
+                
+                # Compare to average (assuming average is ~500 kg/month)
+                average_carbon = 500
+                compared_percent = round((monthly_carbon - average_carbon) / average_carbon * 100, 1)
+                
+                return {
+                    'success': True,
+                    'monthly_carbon_kg': round(monthly_carbon, 1),
+                    'yearly_carbon_kg': round(yearly_carbon, 1),
+                    'daily_average_kg': round(daily_average, 2),
+                    'compared_to_average_percent': compared_percent,
+                    'country_average_kg': average_carbon,
+                    'recommendation': self._get_recommendation(compared_percent)
+                }
+            except Exception as predict_err:
+                logger.error(f"Model prediction failed: {str(predict_err)}")
+                logger.warning("Falling back to rule-based calculation")
+                return self._fallback_lifestyle_prediction(features)
         
         except Exception as e:
             logger.error(f"Error in lifestyle prediction: {str(e)}")
