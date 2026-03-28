@@ -142,6 +142,55 @@ with tab1:
                                 st.write("**Bounding Box:**")
                                 bbox = detection['bbox']
                                 st.json(bbox)
+                                
+                                # 🌱 Integrated Eco-Impact Analysis
+                                st.markdown("---")
+                                st.subheader("🌱 Integrated Eco-Impact")
+                                
+                                with st.spinner(f"Analyzing {detection['class_name']}..."):
+                                    try:
+                                        # 1. Weight Estimation
+                                        weight_payload = {
+                                            "bbox": bbox,
+                                            "class_name": detection['class_name'],
+                                            "image_shape": result.get('image_shape', [640, 480, 3])
+                                        }
+                                        w_resp = requests.post(f"{API_BASE_URL}/api/weight/estimate", json=weight_payload, timeout=10)
+                                        
+                                        if w_resp.status_code == 200:
+                                            w_data = w_resp.json()
+                                            if w_data.get('success'):
+                                                weight_kg = w_data.get('weight_kg', 0)
+                                                st.write(f"⚖️ **Estimated Weight:** {w_data.get('weight_g', 0):.1f}g ({w_data.get('size_category', 'N/A')})")
+                                                
+                                                # 2. Carbon Calculation
+                                                c_payload = {
+                                                    "weight_kg": weight_kg,
+                                                    "material": detection['class_name']
+                                                }
+                                                c_resp = requests.post(f"{API_BASE_URL}/api/carbon/calculate", json=c_payload, timeout=10)
+                                                
+                                                if c_resp.status_code == 200:
+                                                    c_data = c_resp.json()
+                                                    if c_data.get('success'):
+                                                        col_a, col_b = st.columns(2)
+                                                        with col_a:
+                                                            st.metric("💨 CO₂ Footprint", f"{c_data.get('carbon_g', 0):.1f}g")
+                                                        with col_b:
+                                                            st.metric("♻️ Saved if Recycled", f"{c_data.get('co2_saved_kg', 0)*1000:.1f}g")
+                                                        
+                                                        st.info(f"💡 **Tip:** {c_data.get('recycling_reduction_percent', 0)}% reduction if recycled!")
+                                                    else:
+                                                        st.warning("Could not calculate carbon impact.")
+                                                else:
+                                                    st.warning("Carbon API unavailable.")
+                                            else:
+                                                st.warning("Weight estimation failed for this object.")
+                                        else:
+                                            st.warning("Weight API unavailable.")
+                                            
+                                    except Exception as inner_e:
+                                        st.error(f"Analysis failed: {str(inner_e)}")
                     
                     # API metadata
                     with st.expander("📊 API Response Details"):
