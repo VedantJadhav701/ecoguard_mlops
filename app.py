@@ -242,7 +242,7 @@ async def analyze_vision(file: UploadFile = File(...)):
                 enriched_det['size_category'] = weight_result['size_category']
                 
                 # Calculate Carbon
-                carbon_result = predictor.calculate_carbon_from_weight(
+                carbon_result = predictor.calculate_carbon(
                     weight_kg=weight_result['weight_kg'],
                     material=det['class_name']
                 )
