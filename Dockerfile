@@ -49,7 +49,6 @@ COPY .env.example .env
 # Copy model directories
 COPY vision_model/ vision_model/
 COPY weight_model/ weight_model/
-COPY lifestyle_model/ lifestyle_model/
 
 # Create directories for logging and model versioning
 RUN mkdir -p /app/logs /app/models /app/mlruns

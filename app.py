@@ -54,14 +54,7 @@ class WeightEstimateRequest(BaseModel):
     class_name: str
     image_shape: List[int]  # [height, width, channels]
 
-class CarbonCalculateRequest(BaseModel):
-    weight_kg: float
-    material: str
-
-class LifestylePredictRequest(BaseModel):
-    features: List[float]  # 20 lifestyle features
-
-class UserActionRequest(BaseModel):
+class DetectionResult(BaseModel):
     material: str
     weight_g: float
     action: str  # 'recycle' or 'trash'
@@ -92,11 +85,8 @@ async def root():
         "endpoints": {
             "health": "GET /health",
             "diagnostics": "GET /api/diagnostics (detailed model loading info)",
+            "detect_waste": "POST /detect_waste (Main demo endpoint)",
             "vision": "POST /api/vision/detect",
-            "weight": "POST /api/weight/estimate",
-            "carbon": "POST /api/carbon/calculate",
-            "lifestyle": "POST /api/lifestyle/predict",
-            "sensor": "WS /api/sensor/stream",
             "user": "POST /api/user/log-action"
         }
     }
@@ -109,8 +99,7 @@ async def health_check():
         "status": "healthy",
         "models": {
             "vision": predictor.vision_model is not None,
-            "weight": predictor.weight_estimator is not None,
-            "lifestyle": predictor.lifestyle_model is not None
+            "weight": predictor.weight_estimator is not None
         },
         "timestamp": datetime.now().isoformat()
     }
@@ -130,8 +119,6 @@ async def diagnostics():
     vision_path = Path("vision_model/best.pt")
     weight_path = Path("weight_model/weight_estimator.pkl")
     config_path = Path("weight_model/weight_estimator_config.json")
-    lifestyle_path = Path("lifestyle_model/best_ml_model.joblib")
-    
     return {
         "status": "diagnostic",
         "models_path": str(predictor.models_path),
@@ -150,12 +137,6 @@ async def diagnostics():
                 "file_size_kb": (weight_path.stat().st_size / 1024) if weight_path.exists() else 0,
                 "config_exists": config_path.exists(),
                 "config_size_kb": (config_path.stat().st_size / 1024) if config_path.exists() else 0
-            },
-            "lifestyle": {
-                "loaded": predictor.lifestyle_model is not None,
-                "type": type(predictor.lifestyle_model).__name__ if predictor.lifestyle_model else "None",
-                "file_exists": lifestyle_path.exists(),
-                "file_size_mb": (lifestyle_path.stat().st_size / (1024*1024)) if lifestyle_path.exists() else 0
             }
         },
         "config": {
@@ -165,7 +146,6 @@ async def diagnostics():
         "summary": {
             "vision_ok": predictor.vision_model is not None,
             "weight_ok": predictor.weight_estimator is not None,
-            "lifestyle_ok": predictor.lifestyle_model is not None,
             "config_ok": predictor.weight_config is not None
         },
         "environment": {
@@ -175,31 +155,71 @@ async def diagnostics():
         "timestamp": datetime.now().isoformat()
     }
 
-# ==================== VISION MODEL - OBJECT DETECTION ====================
-
-@app.post("/api/vision/detect")
-async def detect_objects(file: UploadFile = File(...)):
+@app.post("/detect_waste")
+async def detect_waste(file: UploadFile = File(...)):
     """
-    Detect waste objects in image (Primitive endpoint)
+    Focused demo endpoint: Detect objects -> Estimate Weight -> Calculate Carbon -> Recommend
+    Returns simplified structure for hackathon demo
     """
     try:
+        logger.info(f"Demo detect_waste requested: {file.filename}")
+        
+        # 1. Image Processing
         contents = await file.read()
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if img is None:
             raise HTTPException(status_code=400, detail="Invalid image file")
             
-        temp_path = f"/tmp/detect_{uuid.uuid4()}.jpg"
+        temp_path = f"/tmp/demo_{uuid.uuid4()}.jpg"
         cv2.imwrite(temp_path, img)
         
         predictor = get_predictor()
-        result = predictor.detect_objects(temp_path)
-        result['image_shape'] = list(img.shape)
-        result['timestamp'] = datetime.now().isoformat()
+        detect_result = predictor.detect_objects(temp_path)
         
-        return result
+        materials = []
+        weights = []
+        carbon_total = 0
+        recommendations = []
+        
+        # 2. Process Detections
+        for det in detect_result.get('detections', []):
+            material = det['class_name']
+            materials.append(material)
+            
+            # Weight
+            weight_res = predictor.estimate_weight(det['bbox'], material, list(img.shape))
+            weight_str = f"{weight_res.get('weight_g', 0):.1f}g" if weight_res.get('success') else "N/A"
+            weights.append(weight_str)
+            
+            # Carbon
+            if weight_res.get('success'):
+                carbon_res = predictor.calculate_carbon(weight_res['weight_kg'], material)
+                if carbon_res.get('success'):
+                    carbon_total += carbon_res['carbon_kg']
+                    
+                    # Recommendation
+                    rec = predictor.get_object_recommendation(material, carbon_res['carbon_kg'])
+                    recommendations.append(rec)
+        
+        # 3. Cleanup
+        if Path(temp_path).exists():
+            os.remove(temp_path)
+            
+        return {
+            "success": True,
+            "materials": materials,
+            "weights": weights,
+            "carbon": f"{carbon_total:.4f}kg CO2",
+            "recommendations": list(set(recommendations)), # Unique recs
+            "count": len(materials),
+            "timestamp": datetime.now().isoformat()
+        }
+        
     except Exception as e:
-        logger.error(f"Error in vision detection: {str(e)}")
+        logger.error(f"Error in detect_waste: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/vision/analyze")
@@ -270,97 +290,6 @@ async def analyze_vision(file: UploadFile = File(...)):
         logger.error(f"Error in vision analysis: {str(e)}")
         import traceback
         logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ==================== WEIGHT MODEL - WEIGHT ESTIMATION ====================
-
-@app.post("/api/weight/estimate")
-async def estimate_weight(request: WeightEstimateRequest):
-    """
-    Estimate object weight from bounding box
-    
-    Args:
-        request: WeightEstimateRequest with bbox, class_name, image_shape
-    
-    Returns:
-        Weight estimation in grams
-    """
-    try:
-        logger.info(f"Weight estimation for {request.class_name}")
-        
-        predictor = get_predictor()
-        result = predictor.estimate_weight(
-            bbox=request.bbox.dict(),
-            class_name=request.class_name,
-            image_shape=request.image_shape
-        )
-        
-        result['timestamp'] = datetime.now().isoformat()
-        
-        return result
-    
-    except Exception as e:
-        logger.error(f"Error in weight estimation: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ==================== CARBON MODEL - CARBON CALCULATION ====================
-
-@app.post("/api/carbon/calculate")
-async def calculate_carbon(request: CarbonCalculateRequest):
-    """
-    Calculate CO2 emissions from material weight
-    
-    Args:
-        request: CarbonCalculateRequest with weight_kg and material
-    
-    Returns:
-        CO2 emissions and recycling impact
-    """
-    try:
-        logger.info(f"Carbon calculation for {request.material} ({request.weight_kg}kg)")
-        
-        predictor = get_predictor()
-        result = predictor.calculate_carbon(
-            weight_kg=request.weight_kg,
-            material=request.material
-        )
-        
-        result['timestamp'] = datetime.now().isoformat()
-        
-        return result
-    
-    except Exception as e:
-        logger.error(f"Error in carbon calculation: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ==================== LIFESTYLE MODEL - CARBON PREDICTION ====================
-
-@app.post("/api/lifestyle/predict")
-async def predict_lifestyle(request: LifestylePredictRequest):
-    """
-    Predict user's carbon footprint from lifestyle features
-    
-    Args:
-        request: LifestylePredictRequest with 20 features
-    
-    Returns:
-        Monthly/yearly carbon footprint prediction
-    """
-    try:
-        if len(request.features) != 20:
-            raise HTTPException(status_code=400, detail="Expected 20 features")
-        
-        logger.info("Lifestyle carbon prediction")
-        
-        predictor = get_predictor()
-        result = predictor.predict_lifestyle_carbon(request.features)
-        
-        result['timestamp'] = datetime.now().isoformat()
-        
-        return result
-    
-    except Exception as e:
-        logger.error(f"Error in lifestyle prediction: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ==================== USER ACTION LOGGING ====================

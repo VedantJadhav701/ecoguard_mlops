@@ -54,7 +54,9 @@ class ModelPredictor:
         self.vision_model = None
         self.weight_estimator = None
         self.weight_config = None
-        self.lifestyle_model = None
+        self.vision_model = None
+        self.weight_estimator = None
+        self.weight_config = None
         self.emission_factors = {
             'plastic': 2.5,
             'glass': 1.8,
@@ -279,49 +281,9 @@ class ModelPredictor:
                     logger.error(f"Failed to load weight config JSON: {str(json_err)}")
                     logger.warning("Using default weight config")
                     self.weight_config = self._get_default_weight_config()
-            else:
-                logger.error(f"Weight config not found at {config_path}")
-                logger.warning("Using default weight config")
                 self.weight_config = self._get_default_weight_config()
             
-            # Load Lifestyle Model
-            logger.info("Loading Lifestyle Model...")
-            lifestyle_path = self.models_path / 'lifestyle_model' / 'best_ml_model.joblib'
-            if lifestyle_path.exists():
-                try:
-                    file_size = lifestyle_path.stat().st_size
-                    logger.info(f"Lifestyle model file size: {file_size} bytes")
-                    
-                    loaded_model = joblib.load(str(lifestyle_path))
-                    
-                    # If loaded object is a dictionary, try to extract the model
-                    if isinstance(loaded_model, dict):
-                        logger.info(f"Loaded lifestyle model is a dictionary with keys: {list(loaded_model.keys())}")
-                        # Look for common keys that might contain the actual model
-                        for key in ['model', 'best_model', 'regressor', 'classifier', 'pipeline', 'clf']:
-                            if key in loaded_model:
-                                logger.info(f"Found model in dictionary using key: '{key}'")
-                                loaded_model = loaded_model[key]
-                                break
-                    
-                    # Validate that what we loaded is actually a model (has predict method)
-                    if not hasattr(loaded_model, 'predict'):
-                        logger.error(f"Loaded object is not a valid model. Type: {type(loaded_model)}")
-                        logger.warning("Object doesn't have predict() method - will use fallback")
-                        self.lifestyle_model = None
-                    else:
-                        self.lifestyle_model = loaded_model
-                        logger.info(f"✓ Lifestyle Model loaded successfully and validated (Type: {type(loaded_model).__name__})")
-                except Exception as joblib_err:
-                    logger.error(f"Failed to load lifestyle model: {str(joblib_err)}")
-                    import traceback
-                    logger.error(f"Traceback: {traceback.format_exc()}")
-                    self.lifestyle_model = None
-            else:
-                logger.error(f"Lifestyle model not found at {lifestyle_path}")
-                self.lifestyle_model = None
-            
-            logger.info("✓ All available models loaded")
+            logger.info("✓ Focused models loaded (Vision, Weight, Carbon)")
             
         except Exception as e:
             logger.error(f"Error loading models: {str(e)}")
@@ -334,7 +296,6 @@ class ModelPredictor:
         logger.info(f"  Vision Model: {'✓ LOADED' if self.vision_model else '✗ FAILED'}")
         logger.info(f"  Weight Estimator: {'✓ LOADED' if self.weight_estimator else '✗ FAILED'}")
         logger.info(f"  Weight Config: {'✓ LOADED' if self.weight_config else '✗ FAILED'}")
-        logger.info(f"  Lifestyle Model: {'✓ LOADED' if self.lifestyle_model else '✗ FAILED'}")
         logger.info("="*50)
     
     def detect_objects(self, image_path):
@@ -529,122 +490,16 @@ class ModelPredictor:
                 'error': str(e)
             }
     
-    def _fallback_lifestyle_prediction(self, features):
-        """
-        Rule-based fallback calculation when ML model is not available
-        Features (20 values):
-        [0] electricity, [1] gas, [2] water, [3] car, [4] transit, [5] flights,
-        [6-8] food, [9] recycling, [10-11] plastic/clothes, [12-19] scaled/duplicates
-        """
-        try:
-            # Extract key features
-            electricity = max(0, features[0] * 10)           # kWh/day -> scale back
-            gas = max(0, features[1] * 50)                   # m³/month -> scale back
-            car_miles = max(0, features[3] * 100)            # scaled -> scale back
-            flights = max(0, features[5])                    # flights/year
-            meat_ratio = max(0, features[6])                 # meat meal ratio
-            recycling = max(0, features[9])                  # recycling rate (0-1)
-            
-            # Rough carbon estimates (kg CO₂)
-            electricity_carbon = electricity * 30 * 0.4           # 0.4 kg CO₂/kWh * 30 days
-            gas_carbon = gas * 2.5                                # 2.5 kg CO₂/m³
-            car_carbon = car_miles * 0.21                         # 0.21 kg CO₂/mile * 30 days
-            flight_carbon = flights * 200 / 12                    # 200 kg per flight, annual
-            food_carbon = (1 + meat_ratio) * 100                  # base + meat consumption
-            
-            # Calculate total with recycling benefit
-            total_carbon = electricity_carbon + gas_carbon + car_carbon + flight_carbon + food_carbon
-            recycling_reduction = total_carbon * recycling * 0.15  # 15% reduction per recycling %
-            monthly_carbon = max(100, total_carbon - recycling_reduction)
-            
-            yearly_carbon = monthly_carbon * 12
-            daily_average = monthly_carbon / 30
-            
-            average_carbon = 500
-            compared_percent = round((monthly_carbon - average_carbon) / average_carbon * 100, 1)
-            
-            return {
-                'success': True,
-                'monthly_carbon_kg': round(monthly_carbon, 1),
-                'yearly_carbon_kg': round(yearly_carbon, 1),
-                'daily_average_kg': round(daily_average, 2),
-                'compared_to_average_percent': compared_percent,
-                'country_average_kg': average_carbon,
-                'recommendation': self._get_recommendation(compared_percent),
-                'warning': '⚠️ Using rule-based estimate (ML model not available)'
-            }
-        except Exception as e:
-            logger.error(f"Fallback lifestyle prediction failed: {str(e)}")
-            return {
-                'success': False,
-                'error': f"Fallback calculation failed: {str(e)}"
-            }
-    
-    def predict_lifestyle_carbon(self, features):
-        """
-        Predict user's carbon footprint from lifestyle features
-        Args:
-            features: List of 20 lifestyle features
-        Returns:
-            Dictionary with carbon prediction
-        """
-        try:
-            if len(features) != 20:
-                raise ValueError(f"Expected 20 features, got {len(features)}")
-            
-            # If model is not loaded or doesn't have predict method, use fallback
-            if self.lifestyle_model is None or not hasattr(self.lifestyle_model, 'predict'):
-                # Only log once instead of every prediction
-                if self.lifestyle_model is not None and not hasattr(self.lifestyle_model, 'predict'):
-                    logger.warning("Lifestyle model object is not a valid sklearn model, using rule-based fallback")
-                return self._fallback_lifestyle_prediction(features)
-            
-            try:
-                # Convert to numpy array
-                features_array = np.array(features).reshape(1, -1)
-                
-                # Predict using loaded model
-                monthly_carbon = float(self.lifestyle_model.predict(features_array)[0])
-                yearly_carbon = monthly_carbon * 12
-                daily_average = monthly_carbon / 30
-                
-                # Compare to average (assuming average is ~500 kg/month)
-                average_carbon = 500
-                compared_percent = round((monthly_carbon - average_carbon) / average_carbon * 100, 1)
-                
-                return {
-                    'success': True,
-                    'monthly_carbon_kg': round(monthly_carbon, 1),
-                    'yearly_carbon_kg': round(yearly_carbon, 1),
-                    'daily_average_kg': round(daily_average, 2),
-                    'compared_to_average_percent': compared_percent,
-                    'country_average_kg': average_carbon,
-                    'recommendation': self._get_recommendation(compared_percent)
-                }
-            except Exception as predict_err:
-                logger.error(f"Model prediction failed: {str(predict_err)}")
-                # Fall back silently without repeating the warning
-                return self._fallback_lifestyle_prediction(features)
-        
-        except Exception as e:
-            logger.error(f"Error in lifestyle prediction: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    def _get_recommendation(self, compared_percent):
-        """Generate recommendation based on comparison"""
-        if compared_percent < -20:
-            return "Excellent! Your carbon footprint is 20%+ below average. You're an environmental leader!"
-        elif compared_percent < -10:
-            return "Great! Your carbon footprint is 10%+ below average. Keep up the good work!"
-        elif compared_percent <= 10:
-            return "Good! Your carbon footprint is close to average. Small improvements can help."
-        elif compared_percent <= 20:
-            return "Your carbon footprint is slightly above average. Consider reducing energy use."
+    def get_object_recommendation(self, material, carbon_kg):
+        """Generate recommendation based on material and carbon impact"""
+        if material == 'plastic':
+            return f"Recycle this plastic to save {carbon_kg*0.7:.2f}kg CO2 (~{carbon_kg*35:.0f} hours of a 60W bulb)."
+        elif material in ['metal', 'glass']:
+            return f"This {material} is 100% recyclable. Recycling saves significant energy and reduces emissions."
+        elif material in ['paper', 'cardboard']:
+            return f"Recycling {material} saves trees and reduces landfill waste."
         else:
-            return "Your carbon footprint is significantly above average. Major changes recommended."
+            return f"Proper disposal of {material} helps protect the environment."
 
 
 # Global predictor instance
