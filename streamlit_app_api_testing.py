@@ -75,14 +75,12 @@ st.title("♻️ EcoGuard API Testing Dashboard")
 st.markdown("Test all API endpoints for the deployed EcoGuard system")
 
 # ==================== TABS ====================
+tab1, tab2, tab3 = st.tabs(["🔍 Object Impact Analyst", "🌍 Lifestyle Carbon Tracker", "🛠️ Advanced Tools"])
 
-tab1, tab2, tab3, tab4 = st.tabs(["🎯 Vision Detection", "⚖️ Weight Estimation", "💨 Carbon Calculator", "🌍 Lifestyle Tracker"])
-
-# ==================== TAB 1: VISION DETECTION ====================
-
+# ==================== TAB 1: OBJECT IMPACT ANALYST ====================
 with tab1:
-    st.header("Vision Detection API")
-    st.write("Upload an image to detect waste objects using the Vision API")
+    st.header("Object Impact Analyst")
+    st.write("Upload an image of a waste object to automatically detect it, estimate its weight, and calculate its carbon footprint.")
     
     col1, col2 = st.columns([2, 1])
     
@@ -185,197 +183,12 @@ with tab1:
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
 
-# ==================== TAB 2: WEIGHT ESTIMATION ====================
-
+# ==================== TAB 2: LIFESTYLE CARBON TRACKER ====================
 with tab2:
-    st.header("Weight Estimation API")
-    st.write("Estimate object weight from bounding box dimensions")
+    st.header("Lifestyle Carbon Prediction")
+    st.write("Predict your personal carbon footprint based on your daily habits and lifestyle.")
     
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Image Dimensions")
-        image_height = st.slider("Image Height (pixels)", 100, 2000, 640, step=10)
-        image_width = st.slider("Image Width (pixels)", 100, 2000, 480, step=10)
-    
-    with col2:
-        st.subheader("Object BBox")
-        bbox_x1 = st.slider("X1 (left)", 0, image_width, 50)
-        bbox_y1 = st.slider("Y1 (top)", 0, image_height, 50)
-        bbox_x2 = st.slider("X2 (right)", 0, image_width, 200)
-        bbox_y2 = st.slider("Y2 (bottom)", 0, image_height, 200)
-    
-    material = st.selectbox(
-        "Material Type",
-        ["plastic", "glass", "metal", "paper", "cardboard", "trash"]
-    )
-    
-    debug_weight = st.checkbox("Debug Info", value=False, key="debug_weight")
-    
-    if st.button("⚖️ Estimate Weight", key="weight_btn"):
-        try:
-            st.info("📡 Sending request to API...")
-            
-            # Prepare request payload
-            payload = {
-                "bbox": {
-                    "x1": float(bbox_x1),
-                    "y1": float(bbox_y1),
-                    "x2": float(bbox_x2),
-                    "y2": float(bbox_y2)
-                },
-                "class_name": material,
-                "image_shape": [image_height, image_width, 3]
-            }
-            
-            # Call API
-            with st.spinner("Estimating weight..."):
-                response = requests.post(
-                    f"{API_BASE_URL}/api/weight/estimate",
-                    json=payload,
-                    timeout=10
-                )
-            
-            if response.status_code == 200:
-                result = response.json()
-                
-                if result.get('success', False):
-                    st.success("✅ Weight estimation successful!")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        st.metric("Weight (grams)", f"{result.get('weight_g', 0):.2f}")
-                    with col2:
-                        st.metric("Weight (kg)", f"{result.get('weight_kg', 0):.4f}")
-                    with col3:
-                        st.metric("Material", result.get('material', 'N/A'))
-                    
-                    st.write(f"**Size Category:** {result.get('size_category', 'N/A')}")
-                    st.write(f"**Confidence:** {result.get('confidence', 'N/A')}")
-                    st.info(f"**Explanation:** {result.get('explanation', 'N/A')}")
-                    
-                    if debug_weight:
-                        st.write("**Full Response:**")
-                        st.json(result)
-                else:
-                    st.error(f"API returned error: {result.get('error', 'Unknown error')}")
-            
-            else:
-                st.error(f"❌ API Error: {response.status_code}")
-                st.write(f"**Message:** {response.text}")
-        
-        except requests.exceptions.Timeout:
-            st.error("❌ Request timeout - API took too long to respond")
-        except requests.exceptions.ConnectionError:
-            st.error("❌ Connection error - Cannot reach API")
-        except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
-
-# ==================== TAB 3: CARBON CALCULATOR ====================
-
-with tab3:
-    st.header("Carbon Calculator API")
-    st.write("Calculate CO₂ emissions from material weight")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        material_carbon = st.selectbox(
-            "Material Type",
-            ["plastic", "glass", "metal", "paper", "cardboard", "trash"],
-            key="carbon_material"
-        )
-    
-    with col2:
-        weight_kg = st.number_input(
-            "Weight (kg)",
-            min_value=0.001,
-            max_value=100.0,
-            value=1.0,
-            step=0.1
-        )
-    
-    debug_carbon = st.checkbox("Debug Info", value=False, key="debug_carbon")
-    
-    if st.button("💨 Calculate Carbon", key="carbon_btn"):
-        try:
-            st.info("📡 Sending request to API...")
-            
-            # Prepare request payload
-            payload = {
-                "weight_kg": float(weight_kg),
-                "material": material_carbon
-            }
-            
-            # Call API
-            with st.spinner("Calculating emissions..."):
-                response = requests.post(
-                    f"{API_BASE_URL}/api/carbon/calculate",
-                    json=payload,
-                    timeout=10
-                )
-            
-            if response.status_code == 200:
-                result = response.json()
-                
-                if result.get('success', False):
-                    st.success("✅ Carbon calculation successful!")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        st.metric("CO₂ (kg)", f"{result.get('carbon_kg', 0):.4f}")
-                    with col2:
-                        st.metric("CO₂ (grams)", f"{result.get('carbon_g', 0):.2f}")
-                    with col3:
-                        st.metric("Emission Factor", f"{result.get('emission_factor', 0):.2f}")
-                    
-                    st.write(f"**Material:** {result.get('material', 'N/A')}")
-                    st.write(f"**Weight:** {result.get('weight_kg', 0):.4f} kg")
-                    
-                    # Recycling impact
-                    st.subheader("♻️ Recycling Impact")
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.metric(
-                            "Recycling Reduction",
-                            f"{result.get('recycling_reduction_percent', 0)}%"
-                        )
-                    
-                    with col2:
-                        st.metric(
-                            "CO₂ if Recycled",
-                            f"{result.get('if_recycled_co2_kg', 0):.4f} kg"
-                        )
-                    
-                    st.info(f"**CO₂ Saved if Recycled:** {result.get('co2_saved_kg', 0):.4f} kg")
-                    
-                    if debug_carbon:
-                        st.write("**Full Response:**")
-                        st.json(result)
-                else:
-                    st.error(f"API returned error: {result.get('error', 'Unknown error')}")
-            
-            else:
-                st.error(f"❌ API Error: {response.status_code}")
-                st.write(f"**Message:** {response.text}")
-        
-        except requests.exceptions.Timeout:
-            st.error("❌ Request timeout - API took too long to respond")
-        except requests.exceptions.ConnectionError:
-            st.error("❌ Connection error - Cannot reach API")
-        except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
-
-# ==================== TAB 4: LIFESTYLE TRACKER ====================
-
-with tab4:
-    st.header("Lifestyle Carbon Prediction API")
-    st.write("Predict user's carbon footprint from lifestyle features")
-    
-    st.info("Fill in the following categories to estimate your carbon footprint")
+    st.info("Fill in the following categories to estimate your monthly and yearly carbon footprint.")
     
     features = []
     
@@ -386,23 +199,26 @@ with tab4:
         electricity = st.slider(
             "Daily Electricity (kWh)",
             0.0, 50.0, 10.0, step=0.5,
-            help="Average household uses ~10 kWh/day"
+            help="Average household uses ~10 kWh/day",
+            key="lifestyle_elec"
         )
-        features.append(electricity / 10)  # Normalize
+        features.append(electricity / 10)
     with col2:
         gas = st.slider(
             "Monthly Gas (m³)",
             0.0, 500.0, 100.0, step=10.0,
-            help="Average household uses ~100 m³/month"
+            help="Average household uses ~100 m³/month",
+            key="lifestyle_gas"
         )
-        features.append(gas / 50)  # Normalize
+        features.append(gas / 50)
     
     water = st.slider(
         "Daily Water (liters)",
         0.0, 500.0, 100.0, step=10.0,
-        help="Average household uses ~100 liters/day"
+        help="Average household uses ~100 liters/day",
+        key="lifestyle_water"
     )
-    features.append(water / 100)  # Normalize
+    features.append(water / 100)
     
     # Transportation
     st.subheader("🚗 Transportation")
@@ -411,21 +227,24 @@ with tab4:
         car_miles = st.slider(
             "Weekly Car Miles",
             0.0, 500.0, 100.0, step=10.0,
-            help="Average commute is ~100 miles/week"
+            help="Average commute is ~100 miles/week",
+            key="lifestyle_car"
         )
-        features.append(car_miles / 100)  # Normalize
+        features.append(car_miles / 100)
     with col2:
         transit = st.slider(
             "Weekly Transit (miles)",
             0.0, 500.0, 50.0, step=10.0,
-            help="Public transport usage"
+            help="Public transport usage",
+            key="lifestyle_transit"
         )
-        features.append(transit / 100)  # Normalize
+        features.append(transit / 100)
     
     flights = st.slider(
         "Annual Flights",
         0, 20, 2, step=1,
-        help="Number of flights per year"
+        help="Number of flights per year",
+        key="lifestyle_flights"
     )
     features.append(float(flights))
     
@@ -436,23 +255,26 @@ with tab4:
         meat_meals = st.slider(
             "Meat Meals/Week",
             0, 21, 7, step=1,
-            help="Number of meals with meat per week"
+            help="Number of meals with meat per week",
+            key="lifestyle_meat"
         )
-        features.append(meat_meals / 21)  # Normalize (0-1)
+        features.append(meat_meals / 21)
     with col2:
         vegetarian_meals = st.slider(
             "Vegetarian Meals/Week",
             0, 21, 5, step=1,
-            help="Number of vegetarian meals per week"
+            help="Number of vegetarian meals per week",
+            key="lifestyle_veg"
         )
-        features.append(vegetarian_meals / 21)  # Normalize (0-1)
+        features.append(vegetarian_meals / 21)
     with col3:
         local_food = st.slider(
             "Local Food %",
             0.0, 100.0, 50.0, step=10.0,
-            help="Percentage of locally sourced food"
+            help="Percentage of locally sourced food",
+            key="lifestyle_local"
         )
-        features.append(local_food / 100)  # Normalize (0-1)
+        features.append(local_food / 100)
     
     # Waste & Recycling
     st.subheader("♻️ Waste & Recycling")
@@ -461,129 +283,110 @@ with tab4:
         recycling_rate = st.slider(
             "Recycling Rate (%)",
             0.0, 100.0, 50.0, step=5.0,
-            help="Percentage of waste recycled"
+            help="Percentage of waste recycled",
+            key="lifestyle_recycling"
         )
-        features.append(recycling_rate / 100)  # Normalize (0-1)
+        features.append(recycling_rate / 100)
     with col2:
         plastic_bags = st.slider(
             "Plastic Bags/Week",
             0, 20, 5, step=1,
-            help="Single-use plastic bags per week"
+            help="Single-use plastic bags per week",
+            key="lifestyle_plastic"
         )
-        features.append(plastic_bags / 20)  # Normalize (0-1)
+        features.append(plastic_bags / 20)
     
     clothing = st.slider(
         "New Clothes/Year",
         0, 100, 20, step=5,
-        help="Number of new clothing items purchased per year"
+        help="Number of new clothing items purchased per year",
+        key="lifestyle_clothing"
     )
-    features.append(clothing / 100)  # Normalize (0-1)
+    features.append(clothing / 100)
     
-    # Additional features (padding to 20)
-    features.append(0.5)  # placeholder
-    features.append(0.5)  # placeholder
-    features.append(0.5)  # placeholder
-    features.append(0.5)  # placeholder
+    # Padding features to 20
+    while len(features) < 20:
+        features.append(0.5)
     
     debug_lifestyle = st.checkbox("Debug Info", value=False, key="debug_lifestyle")
     
     if st.button("🌍 Calculate Carbon Footprint", key="lifestyle_btn"):
         try:
             st.info("📡 Sending request to API...")
-            
-            # Ensure we have 20 features
-            while len(features) < 20:
-                features.append(0.5)
-            features = features[:20]
-            
-            # Prepare request payload
             payload = {"features": [float(f) for f in features]}
             
-            # Call API
-            with st.spinner("Calculating lifestyle carbon footprint..."):
-                response = requests.post(
-                    f"{API_BASE_URL}/api/lifestyle/predict",
-                    json=payload,
-                    timeout=10
-                )
+            with st.spinner("Predicting lifestyle footprint..."):
+                response = requests.post(f"{API_BASE_URL}/api/lifestyle/predict", json=payload, timeout=10)
             
             if response.status_code == 200:
                 result = response.json()
-                
-                if result.get('success', False):
-                    st.success("✅ Lifestyle prediction successful!")
+                if result.get('success'):
+                    st.success("✅ Prediction successful!")
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Monthly Carbon", f"{result.get('monthly_carbon_kg', 0):.1f} kg")
+                    c2.metric("Yearly Carbon", f"{result.get('yearly_carbon_kg', 0):.1f} kg")
+                    c3.metric("Daily Average", f"{result.get('daily_average_kg', 0):.2f} kg")
                     
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        st.metric(
-                            "Monthly Carbon",
-                            f"{result.get('monthly_carbon_kg', 0):.1f} kg"
-                        )
-                    with col2:
-                        st.metric(
-                            "Yearly Carbon",
-                            f"{result.get('yearly_carbon_kg', 0):.1f} kg"
-                        )
-                    with col3:
-                        st.metric(
-                            "Daily Average",
-                            f"{result.get('daily_average_kg', 0):.2f} kg"
-                        )
-                    
-                    # Comparison to average
                     compared = result.get('compared_to_average_percent', 0)
-                    average = result.get('country_average_kg', 500)
-                    
-                    st.write(f"**Country Average:** {average} kg/month")
-                    
                     if compared < 0:
                         st.success(f"✅ You are **{abs(compared):.1f}%** below average!")
-                    elif compared > 0:
-                        st.warning(f"⚠️ You are **{compared:.1f}%** above average")
                     else:
-                        st.info("You are at the average level")
+                        st.warning(f"⚠️ You are **{compared:.1f}%** above average")
                     
-                    # Recommendation
-                    st.info(f"**💡 Recommendation:** {result.get('recommendation', 'N/A')}")
-                    
-                    if debug_lifestyle:
-                        st.write("**Full Response:**")
-                        st.json(result)
+                    st.info(f"💡 **Recommendation:** {result.get('recommendation', 'N/A')}")
                 else:
-                    st.error(f"API returned error: {result.get('error', 'Unknown error')}")
-            
+                    st.error(f"API Error: {result.get('error')}")
             else:
-                st.error(f"❌ API Error: {response.status_code}")
-                st.write(f"**Message:** {response.text}")
-        
-        except requests.exceptions.Timeout:
-            st.error("❌ Request timeout - API took too long to respond")
-        except requests.exceptions.ConnectionError:
-            st.error("❌ Connection error - Cannot reach API")
+                st.error(f"API Error: {response.status_code}")
         except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
+            st.error(f"Error: {str(e)}")
+
+# ==================== TAB 3: ADVANCED TOOLS ====================
+with tab3:
+    st.header("Manual Estimation Tools")
+    st.write("Use these tools for deep-dive testing of individual model components.")
+    
+    with st.expander("⚖️ Manual Weight Estimator"):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("Image Dimensions")
+            h = st.slider("Image Height", 100, 2000, 640, key="manual_h")
+            w = st.slider("Image Width", 100, 2000, 480, key="manual_w")
+        with col2:
+            st.subheader("BBox")
+            x1 = st.slider("X1", 0, w, 50, key="manual_x1")
+            y1 = st.slider("Y1", 0, h, 50, key="manual_y1")
+            x2 = st.slider("X2", 0, w, 200, key="manual_x2")
+            y2 = st.slider("Y2", 0, h, 200, key="manual_y2")
+        
+        mat = st.selectbox("Material", ["plastic", "glass", "metal", "paper", "cardboard", "trash"], key="manual_mat")
+        
+        if st.button("⚖️ Estimate Weight", key="manual_w_btn"):
+            payload = {"bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2}, "class_name": mat, "image_shape": [h, w, 3]}
+            resp = requests.post(f"{API_BASE_URL}/api/weight/estimate", json=payload)
+            if resp.status_code == 200:
+                st.json(resp.json())
+            else:
+                st.error(f"Error: {resp.status_code}")
+
+    with st.expander("💨 Manual Carbon Calculator"):
+        c_mat = st.selectbox("Material", ["plastic", "glass", "metal", "paper", "cardboard", "trash"], key="manual_c_mat")
+        c_weight = st.number_input("Weight (kg)", 0.0, 100.0, 1.0, key="manual_c_weight")
+        
+        if st.button("💨 Calculate Carbon", key="manual_c_btn"):
+            payload = {"weight_kg": c_weight, "material": c_mat}
+            resp = requests.post(f"{API_BASE_URL}/api/carbon/calculate", json=payload)
+            if resp.status_code == 200:
+                st.json(resp.json())
+            else:
+                st.error(f"Error: {resp.status_code}")
 
 # ==================== FOOTER ====================
-
 st.markdown("---")
-st.markdown("""
+st.markdown(f"""
 ### About This Dashboard
-- **Purpose:** Test deployed EcoGuard API endpoints
-- **API URL:** `{}`
-- **Endpoints Tested:**
-  - `POST /api/vision/detect` - Waste object detection
-  - `POST /api/weight/estimate` - Object weight estimation
-  - `POST /api/carbon/calculate` - CO₂ emissions calculation
-  - `POST /api/lifestyle/predict` - Carbon footprint prediction
-  - `GET /health` - API health check
-
-### How to Switch API Endpoints
-Edit line 14 in this file:
-- **Production (Render):** `https://ecoguard-mlops.onrender.com`
-- **Local (Development):** `http://localhost:8000`
-
-### Documentation
-- **API Docs:** Visit `/docs` on the API server for Swagger UI
-- **GitHub:** https://github.com/VedantJadhav701/ecoguard_mlops
-""".format(API_BASE_URL))
+- **Production API:** `{API_BASE_URL}`
+- **Dual Focus Architecture:**
+  1. **Object Impact Analyst**: Integrated Vision, Weight, and Carbon analysis.
+  2. **Lifestyle Carbon Tracker**: Personal habit-based yearly footprint prediction.
+""")
