@@ -180,50 +180,96 @@ async def diagnostics():
 @app.post("/api/vision/detect")
 async def detect_objects(file: UploadFile = File(...)):
     """
-    Detect waste objects in image
-    
-    Args:
-        file: Image file (JPG, PNG)
-    
-    Returns:
-        Detections with class, confidence, and bounding boxes
+    Detect waste objects in image (Primitive endpoint)
     """
     try:
-        logger.info(f"Receiving image: {file.filename}")
-        
-        # Read uploaded file
         contents = await file.read()
-        
-        # Convert to numpy array
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
         if img is None:
             raise HTTPException(status_code=400, detail="Invalid image file")
-        
-        # Save temporarily for processing
-        temp_path = f"/tmp/ecoguard_{uuid.uuid4()}.jpg"
+            
+        temp_path = f"/tmp/detect_{uuid.uuid4()}.jpg"
         cv2.imwrite(temp_path, img)
         
-        # Get predictor and detect
         predictor = get_predictor()
         result = predictor.detect_objects(temp_path)
-        
-        # Add image metadata
         result['image_shape'] = list(img.shape)
-        result['image_shape_hw'] = {
-            'height': img.shape[0],
-            'width': img.shape[1],
-            'channels': img.shape[2] if len(img.shape) > 2 else 1
-        }
         result['timestamp'] = datetime.now().isoformat()
         
-        logger.info(f"Detection complete: {len(result.get('detections', []))} objects found")
-        
         return result
-    
     except Exception as e:
         logger.error(f"Error in vision detection: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/vision/analyze")
+async def analyze_vision(file: UploadFile = File(...)):
+    """
+    Combined endpoint: Detect objects -> Estimate Weight -> Calculate Carbon
+    Returns a full eco-impact analysis for the image
+    """
+    try:
+        logger.info(f"Full analysis requested for image: {file.filename}")
+        
+        # 1. Detection (Vision)
+        contents = await file.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            raise HTTPException(status_code=400, detail="Invalid image file")
+            
+        temp_path = f"/tmp/analyze_{uuid.uuid4()}.jpg"
+        cv2.imwrite(temp_path, img)
+        
+        predictor = get_predictor()
+        detect_result = predictor.detect_objects(temp_path)
+        
+        # 2. Enrich detections with Weight and Carbon
+        enriched_detections = []
+        for det in detect_result.get('detections', []):
+            enriched_det = det.copy()
+            
+            # Estimate Weight
+            weight_result = predictor.estimate_weight(
+                bbox=det['bbox'],
+                class_name=det['class_name'],
+                image_shape=list(img.shape)
+            )
+            
+            if weight_result.get('success'):
+                enriched_det['weight_g'] = weight_result['weight_g']
+                enriched_det['weight_kg'] = weight_result['weight_kg']
+                enriched_det['size_category'] = weight_result['size_category']
+                
+                # Calculate Carbon
+                carbon_result = predictor.calculate_carbon_from_weight(
+                    weight_kg=weight_result['weight_kg'],
+                    material=det['class_name']
+                )
+                
+                if carbon_result.get('success'):
+                    enriched_det['carbon_g'] = carbon_result['carbon_g']
+                    enriched_det['carbon_kg'] = carbon_result['carbon_kg']
+                    enriched_det['co2_saved_kg'] = carbon_result['co2_saved_kg']
+                    enriched_det['recycling_reduction_percent'] = carbon_result['recycling_reduction_percent']
+            
+            enriched_detections.append(enriched_det)
+            
+        # 3. Final Result
+        return {
+            "success": True,
+            "count": len(enriched_detections),
+            "detections": enriched_detections,
+            "image_shape": list(img.shape),
+            "timestamp": datetime.now().isoformat(),
+            "model_vision": detect_result.get('model', 'YOLOv8'),
+            "status": "complete_analysis"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in vision analysis: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 # ==================== WEIGHT MODEL - WEIGHT ESTIMATION ====================

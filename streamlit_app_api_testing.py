@@ -109,9 +109,9 @@ with tab1:
                 files = {'file': (uploaded_file.name, uploaded_file, 'image/jpeg')}
                 
                 # Call API
-                with st.spinner("Detecting objects..."):
+                with st.spinner("Analyzing image (Vision + Weight + Carbon)..."):
                     response = requests.post(
-                        f"{API_BASE_URL}/api/vision/detect",
+                        f"{API_BASE_URL}/api/vision/analyze",
                         files=files,
                         timeout=30
                     )
@@ -119,7 +119,7 @@ with tab1:
                 if response.status_code == 200:
                     result = response.json()
                     
-                    st.success("✅ Detection successful!")
+                    st.success("✅ Analysis successful!")
                     
                     # Display detections count
                     count = result.get('count', 0)
@@ -128,69 +128,39 @@ with tab1:
                     # Display detections
                     detections = result.get('detections', [])
                     if detections:
-                        st.write("**Detected Objects:**")
+                        st.write("**Detected Objects & Eco-Impact:**")
                         for i, detection in enumerate(detections, 1):
-                            with st.expander(f"Object {i}: {detection['class_name'].upper()} (Confidence: {detection['confidence']})"):
+                            with st.expander(f"Object {i}: {detection['class_name'].upper()} (Confidence: {detection['confidence']:.2f})", expanded=True):
                                 col1, col2 = st.columns(2)
                                 with col1:
                                     st.write(f"**Class:** {detection['class_name']}")
-                                    st.write(f"**Class ID:** {detection['class_id']}")
+                                    st.write(f"**Confidence:** {detection['confidence']*100:.1f}%")
+                                    st.write("**Bounding Box:**")
+                                    st.json(detection['bbox'])
+                                
                                 with col2:
-                                    st.write(f"**Confidence:** {detection['confidence']:.4f}")
-                                    st.write(f"**Confidence %:** {detection['confidence']*100:.2f}%")
-                                
-                                st.write("**Bounding Box:**")
-                                bbox = detection['bbox']
-                                st.json(bbox)
-                                
-                                # 🌱 Integrated Eco-Impact Analysis
-                                st.markdown("---")
-                                st.subheader("🌱 Integrated Eco-Impact")
-                                
-                                with st.spinner(f"Analyzing {detection['class_name']}..."):
-                                    try:
-                                        # 1. Weight Estimation
-                                        weight_payload = {
-                                            "bbox": bbox,
-                                            "class_name": detection['class_name'],
-                                            "image_shape": result.get('image_shape', [640, 480, 3])
-                                        }
-                                        w_resp = requests.post(f"{API_BASE_URL}/api/weight/estimate", json=weight_payload, timeout=10)
+                                    st.write("⚖️ **Weight Estimation**")
+                                    if 'weight_g' in detection:
+                                        st.write(f"Weight: **{detection['weight_g']:.1f}g**")
+                                        st.write(f"Category: {detection.get('size_category', 'N/A')}")
+                                    else:
+                                        st.warning("Weight estimation N/A")
                                         
-                                        if w_resp.status_code == 200:
-                                            w_data = w_resp.json()
-                                            if w_data.get('success'):
-                                                weight_kg = w_data.get('weight_kg', 0)
-                                                st.write(f"⚖️ **Estimated Weight:** {w_data.get('weight_g', 0):.1f}g ({w_data.get('size_category', 'N/A')})")
-                                                
-                                                # 2. Carbon Calculation
-                                                c_payload = {
-                                                    "weight_kg": weight_kg,
-                                                    "material": detection['class_name']
-                                                }
-                                                c_resp = requests.post(f"{API_BASE_URL}/api/carbon/calculate", json=c_payload, timeout=10)
-                                                
-                                                if c_resp.status_code == 200:
-                                                    c_data = c_resp.json()
-                                                    if c_data.get('success'):
-                                                        col_a, col_b = st.columns(2)
-                                                        with col_a:
-                                                            st.metric("💨 CO₂ Footprint", f"{c_data.get('carbon_g', 0):.1f}g")
-                                                        with col_b:
-                                                            st.metric("♻️ Saved if Recycled", f"{c_data.get('co2_saved_kg', 0)*1000:.1f}g")
-                                                        
-                                                        st.info(f"💡 **Tip:** {c_data.get('recycling_reduction_percent', 0)}% reduction if recycled!")
-                                                    else:
-                                                        st.warning("Could not calculate carbon impact.")
-                                                else:
-                                                    st.warning("Carbon API unavailable.")
-                                            else:
-                                                st.warning("Weight estimation failed for this object.")
-                                        else:
-                                            st.warning("Weight API unavailable.")
-                                            
-                                    except Exception as inner_e:
-                                        st.error(f"Analysis failed: {str(inner_e)}")
+                                st.markdown("---")
+                                st.write("💨 **Carbon Footprint Analysis**")
+                                
+                                if 'carbon_g' in detection:
+                                    c_col1, c_col2, c_col3 = st.columns(3)
+                                    with c_col1:
+                                        st.metric("CO₂ Emitted", f"{detection['carbon_g']:.1f}g")
+                                    with c_col2:
+                                        st.metric("CO₂ Saved (Recycled)", f"{detection.get('co2_saved_kg', 0)*1000:.1f}g")
+                                    with c_col3:
+                                        st.metric("Reduction %", f"{detection.get('recycling_reduction_percent', 0)}%")
+                                    
+                                    st.info(f"💡 **Tip:** Proper disposal of {detection['class_name']} significantly reduces environmental impact.")
+                                else:
+                                    st.warning("Carbon footprint data N/A")
                     
                     # API metadata
                     with st.expander("📊 API Response Details"):
